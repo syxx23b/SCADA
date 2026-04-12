@@ -2,22 +2,14 @@
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import type { ReactNode } from 'react'
 import './App.css'
-import { browseDevice, connectDevice, createDevice, createTag, deleteTag, disconnectDevice, getDevices, getRuntimeOverview, getTags, updateDevice, updateTag, writeTag } from './api'
+import { browseDevice, connectDevice, createDevice, createTag, deleteTag, disconnectDevice, getDevices, getRuntimeOverview, getTags, openVncTool, updateDevice, updateTag, writeTag } from './api'
 import type { BrowseNode, DeviceConnection, DeviceFormState, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
 
 type ViewKey = 'dashboard' | 'runtime' | 'tags' | 'batch' | 'devices'
 type RuntimeStatus = { label: '正常' | '异常'; className: 'normal' | 'fault' }
 type HistoryPoint = { ts: number; value: number }
-type DashboardMetric = { tag: TagDefinition; label: string; value: string }
-type DashboardGroup = {
-  name: string
-  tags: TagDefinition[]
-  pressure?: TagDefinition
-  flow?: TagDefinition
-  metrics: DashboardMetric[]
-  pressureSeries: HistoryPoint[]
-  flowSeries: HistoryPoint[]
-}
+type DashboardField = { tag?: TagDefinition; snapshot?: TagSnapshot; numeric: number | null; text: string }
+type FaceplateTrend = { pressure: HistoryPoint[]; flow: HistoryPoint[] }
 
 const sidebarItems: Array<{ key: ViewKey; label: string; icon: string }> = [
   { key: 'dashboard', label: 'Dashboard', icon: '◉' },
@@ -26,6 +18,7 @@ const sidebarItems: Array<{ key: ViewKey; label: string; icon: string }> = [
   { key: 'batch', label: '批量', icon: '⌘' },
   { key: 'devices', label: '设备', icon: '◫' },
 ]
+const dashboardFaceplateIndexes = [1, 2] as const
 
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
@@ -49,13 +42,13 @@ function getDisplayName(nodeId: string) {
 function getResolvedGroup(deviceName: string, tag: TagDefinition) {
   const explicit = tag.groupKey?.trim()
   if (explicit) return explicit
-  const match = getDisplayName(tag.nodeId).match(/HMI_DB\.HMI_Faceplates\[(\d+)\]/i)
+  const match = getDisplayName(tag.nodeId).match(/HMI_DB\.(?:HMI_Faceplates|Faceplates)\[(\d+)\]/i)
   return match ? `${deviceName}_HMI${match[1]}` : '未分组'
 }
 
-const DASHBOARD_HISTORY_WINDOW_MS = 2 * 60 * 1000
-
-function statusOf(snapshot: TagSnapshot | undefined): RuntimeStatus {
+function statusOf(snapshot: TagSnapshot | undefined, deviceStatus: string | undefined): RuntimeStatus {
+  const device = (deviceStatus ?? '').toLowerCase()
+  if (device !== '' && device !== 'connected') return { label: '异常', className: 'fault' }
   if (!snapshot) return { label: '异常', className: 'fault' }
   const q = (snapshot.quality ?? '').toLowerCase()
   const s = (snapshot.connectionState ?? '').toLowerCase()
@@ -70,25 +63,25 @@ function formatValue(tag: TagDefinition, snapshot: TagSnapshot | undefined) {
   return String(snapshot.value)
 }
 
-function timeText(snapshot: TagSnapshot | undefined) {
-  return snapshot?.sourceTimestamp ? new Date(snapshot.sourceTimestamp).toLocaleString('zh-CN') : '-'
-}
-
-function shortLabel(tag: TagDefinition) {
-  return getDisplayName(tag.nodeId).split('.').pop() || tag.displayName
-}
-
-function pickExactTag(tags: TagDefinition[], preferredName: string, fallbackPattern: RegExp) {
-  return (
-    tags.find((tag) => shortLabel(tag).toLowerCase() === preferredName.toLowerCase()) ??
-    tags.find((tag) => fallbackPattern.test(shortLabel(tag)))
-  )
+function compactTimeText(snapshot: TagSnapshot | undefined) {
+  if (!snapshot?.sourceTimestamp) return '-'
+  const date = new Date(snapshot.sourceTimestamp)
+  if (Number.isNaN(date.getTime())) return '-'
+  const yyyy = date.getFullYear()
+  const mm = date.getMonth() + 1
+  const dd = date.getDate()
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mi = String(date.getMinutes()).padStart(2, '0')
+  const ss = String(date.getSeconds()).padStart(2, '0')
+  return `${yyyy}/${mm}/${dd} ${hh}:${mi}:${ss}`
 }
 
 function inferUnit(label: string) {
   const value = label.toLowerCase()
-  if (/pressure|press/.test(value)) return 'bar'
-  if (/flow/.test(value)) return 'm³/h'
+  if (/inletpressure/.test(value)) return 'bar'
+  if (/pressure|press/.test(value)) return 'MPa'
+  if (/flow/.test(value)) return 'L/M'
+  if (/power/.test(value)) return 'W'
   if (/temp|temperature/.test(value)) return '°C'
   if (/frequency|freq/.test(value)) return 'Hz'
   if (/current/.test(value)) return 'A'
@@ -101,6 +94,7 @@ function inferUnit(label: string) {
 }
 
 function toNumericValue(value: TagSnapshot['value']) {
+  if (typeof value === 'boolean') return value ? 1 : 0
   if (typeof value === 'number' && Number.isFinite(value)) return value
   if (typeof value === 'string' && value.trim() !== '') {
     const cleaned = value.replace(/,/g, '').match(/-?\d+(\.\d+)?/)
@@ -110,110 +104,179 @@ function toNumericValue(value: TagSnapshot['value']) {
   return null
 }
 
-function formatNumberWithUnit(value: number | null, unit: string) {
+function formatNumberWithUnit(value: number | null, unit: string, digits?: number) {
   if (value === null) return `- ${unit}`.trim()
-  const rounded = Number.isInteger(value) ? value.toString() : value.toFixed(2)
+  const rounded =
+    typeof digits === 'number'
+      ? value.toFixed(digits)
+      : Number.isInteger(value)
+        ? value.toString()
+        : value.toFixed(2)
   return unit ? `${rounded} ${unit}` : rounded
-}
-
-function pickDashboardGroups(tags: TagDefinition[], runtimeNameLookup: Record<string, string>) {
-  const byName = new Map<string, TagDefinition[]>()
-  for (const tag of tags) {
-    const groupName = getResolvedGroup(runtimeNameLookup[tag.deviceId] ?? '', tag)
-    if (!byName.has(groupName)) byName.set(groupName, [])
-    byName.get(groupName)?.push(tag)
-  }
-  const names = Array.from(byName.keys())
-  const preferred = [
-    names.find((name) => /HMI1/i.test(name)),
-    names.find((name) => /HMI2/i.test(name)),
-    ...names.filter((name) => !/HMI1|HMI2/i.test(name)),
-  ].filter((name, index, array) => Boolean(name) && array.indexOf(name) === index) as string[]
-  return preferred.slice(0, 2).map((name) => ({ name, tags: byName.get(name) ?? [] }))
-}
-
-function updateHistoryMap(current: Record<string, HistoryPoint[]>, snapshot: TagSnapshot) {
-  const numeric = toNumericValue(snapshot.value)
-  if (numeric === null) return current
-  const tsText = snapshot.sourceTimestamp ?? snapshot.serverTimestamp ?? new Date().toISOString()
-  const ts = Number.isNaN(Date.parse(tsText)) ? Date.now() : Date.parse(tsText)
-  const existing = (current[snapshot.tagId] ?? []).filter((point) => ts - point.ts <= DASHBOARD_HISTORY_WINDOW_MS)
-  const last = existing[existing.length - 1]
-  if (last && last.ts === ts && last.value === numeric) return current
-  const next = [...existing, { ts, value: numeric }].filter((point) => ts - point.ts <= DASHBOARD_HISTORY_WINDOW_MS)
-  return { ...current, [snapshot.tagId]: next }
 }
 
 function normalizeTrend(points: HistoryPoint[]) {
   if (points.length === 0) return []
   const usePoints = points.length === 1 ? [{ ts: points[0].ts - 60_000, value: points[0].value }, points[0]] : points
   const values = usePoints.map((point) => point.value)
-  const min = Math.min(...values)
-  const max = Math.max(...values)
-  const range = max - min || Math.max(Math.abs(max), 1)
+  const sorted = [...values].sort((left, right) => left - right)
+  const pick = (ratio: number) => sorted[Math.max(0, Math.min(sorted.length - 1, Math.floor((sorted.length - 1) * ratio)))]
+  const q10 = pick(0.1)
+  const q90 = pick(0.9)
+  const center = (q10 + q90) / 2
+  const halfRange = Math.max((q90 - q10) / 2, Math.max(...values.map((value) => Math.abs(value - center))) * 0.6, 0.5)
+  const min = center - halfRange
+  const max = center + halfRange
+  const range = Math.max(max - min, 1e-6)
   return usePoints.map((point, index) => {
     const x = usePoints.length === 1 ? 100 : (index / (usePoints.length - 1)) * 100
-    const y = 36 - ((point.value - min) / range) * 28
+    const normalized = Math.max(0, Math.min(1, (point.value - min) / range))
+    const y = 40 - normalized * 34
     return { x, y, value: point.value }
   })
 }
 
-function getSeriesPoints(tag: TagDefinition | undefined, historyByTag: Record<string, HistoryPoint[]>, snapshotByTagId: Map<string, TagSnapshot>) {
-  if (!tag) return []
-  const history = historyByTag[tag.id] ?? []
-  if (history.length > 0) return history.slice(-12)
-  const snapshot = snapshotByTagId.get(tag.id)
-  const numeric = toNumericValue(snapshot?.value ?? null)
-  if (numeric === null) return []
-  const tsText = snapshot?.sourceTimestamp ?? snapshot?.serverTimestamp ?? new Date().toISOString()
-  const ts = Number.isNaN(Date.parse(tsText)) ? Date.now() : Date.parse(tsText)
-  return [{ ts, value: numeric }]
+function errCodeToStatus(errCode: number) {
+  const dictionary: Record<number, { text: string; className: 'normal' | 'fault' }> = {
+    0: { text: '正常', className: 'normal' },
+    1: { text: '不通电', className: 'fault' },
+    2: { text: '低压启动失败', className: 'fault' },
+    3: { text: '工作电流低', className: 'fault' },
+    4: { text: '工作电流高', className: 'fault' },
+    5: { text: '工作压力低', className: 'fault' },
+    6: { text: '工作压力高', className: 'fault' },
+    7: { text: '工作流量低', className: 'fault' },
+    8: { text: '工作流量高', className: 'fault' },
+    9: { text: '保压压力低', className: 'fault' },
+    10: { text: '保压压力高', className: 'fault' },
+    11: { text: '反冲压力低', className: 'fault' },
+    12: { text: '反冲压力高', className: 'fault' },
+    13: { text: '保压电流低', className: 'fault' },
+    14: { text: '保压电流高', className: 'fault' },
+    15: { text: '关枪不停机', className: 'fault' },
+    16: { text: '吸液不合格', className: 'fault' },
+    17: { text: '不保压', className: 'fault' },
+    18: { text: '进水压力低', className: 'fault' },
+    19: { text: '工压不稳', className: 'fault' },
+    21: { text: '泵盖渗漏', className: 'fault' },
+    22: { text: '泵体渗漏', className: 'fault' },
+    23: { text: '油缸渗漏', className: 'fault' },
+    24: { text: '电机异常', className: 'fault' },
+    25: { text: '进水端异常', className: 'fault' },
+    26: { text: '出水口异常', className: 'fault' },
+    27: { text: '高压管漏水', className: 'fault' },
+    28: { text: '外观异常', className: 'fault' },
+    29: { text: '高压O形圈异常', className: 'fault' },
+    30: { text: '其他异常', className: 'fault' },
+    50: { text: '开枪跳动', className: 'fault' },
+    51: { text: '关枪跳动', className: 'fault' },
+  }
+  return dictionary[errCode] ?? { text: `ErrCode ${errCode}`, className: 'fault' as const }
 }
 
-function TrendChart({
-  series,
+function workflowToLabel(workflow: number) {
+  const dictionary: Record<number, string> = {
+    0: '待命',
+    1: '等待进水',
+    2: '低压启动',
+    3: '高压老化',
+    4: '高压磨合',
+    5: '常压磨合',
+    6: '虹吸测试',
+    7: '保压测试',
+    8: '吹气清理',
+  }
+  return dictionary[workflow] ?? `未知流程(${workflow})`
+}
+
+function MiniSparkline({
+  points,
+  color,
 }: {
-  series: Array<{ label: string; unit: string; color: string; points: HistoryPoint[]; current: string }>
+  points: HistoryPoint[]
+  color: string
 }) {
+  const normalized = normalizeTrend(points)
+  const first = normalized[0]
+  const last = normalized[normalized.length - 1]
+  const smoothPath = normalized.length <= 1
+    ? normalized.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ')
+    : normalized.slice(1).reduce((path, point, index) => {
+      const prev = normalized[index]
+      const cx = ((prev.x + point.x) / 2).toFixed(2)
+      const cy = ((prev.y + point.y) / 2).toFixed(2)
+      return `${path} Q ${prev.x.toFixed(2)} ${prev.y.toFixed(2)}, ${cx} ${cy}`
+    }, `M ${normalized[0].x.toFixed(2)} ${normalized[0].y.toFixed(2)}`)
+  const areaPath = first && last ? `${smoothPath} L ${last.x.toFixed(2)} 44 L ${first.x.toFixed(2)} 44 Z` : ''
+
   return (
-    <div className="trend-chart">
-      <svg viewBox="0 0 100 44" preserveAspectRatio="none" aria-hidden="true">
-        <g className="trend-grid">
-          <line x1="0" y1="8" x2="100" y2="8" />
-          <line x1="0" y1="20" x2="100" y2="20" />
-          <line x1="0" y1="32" x2="100" y2="32" />
-        </g>
-        {series.map((item) => {
-          const points = normalizeTrend(item.points)
-          if (points.length === 0) return null
-          const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ')
-          const last = points[points.length - 1]
-          return (
-            <g key={item.label}>
-              <path d={path} fill="none" stroke={item.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-              <circle cx={last.x} cy={last.y} r="1.8" fill={item.color} />
-            </g>
-          )
-        })}
-      </svg>
-      <div className="trend-legend">
-        {series.map((item) => (
-          <div key={item.label} className="trend-legend-item">
-            <span className="legend-dot" style={{ background: item.color }} />
-            <div>
-              <strong>{item.label}</strong>
-              <span>{item.current}</span>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    <svg className="dashboard-sparkline" viewBox="0 0 100 44" preserveAspectRatio="none" aria-hidden="true">
+      {areaPath ? <path d={areaPath} fill={color} fillOpacity="0.16" /> : null}
+      {smoothPath ? <path d={smoothPath} fill="none" stroke={color} strokeWidth="1.9" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" /> : null}
+    </svg>
+  )
+}
+
+function DashboardProgressRing({ percent, color = '#605af3' }: { percent: number; color?: string }) {
+  const safePercent = Math.max(0, Math.min(100, percent))
+  const radius = 34
+  const circumference = 2 * Math.PI * radius
+  const dashOffset = circumference * (1 - safePercent / 100)
+
+  return (
+    <svg className="dashboard-ring" viewBox="0 0 96 96" aria-hidden="true">
+      <circle className="dashboard-ring-track" cx="48" cy="48" r={radius} />
+      <circle className="dashboard-ring-value" cx="48" cy="48" r={radius} stroke={color} strokeDasharray={circumference} strokeDashoffset={dashOffset} />
+      <text x="48" y="51" textAnchor="middle">
+        {safePercent}%
+      </text>
+    </svg>
+  )
+}
+
+function DashboardDualProgressRing({ percent, positive, negative }: { percent: number; positive: string; negative: string }) {
+  const safePercent = Math.max(0, Math.min(100, percent))
+  const radius = 34
+  const circumference = 2 * Math.PI * radius
+  const positiveLength = circumference * (safePercent / 100)
+  const negativeLength = circumference - positiveLength
+
+  return (
+    <svg className="dashboard-ring" viewBox="0 0 96 96" aria-hidden="true">
+      <circle className="dashboard-ring-track" cx="48" cy="48" r={radius} />
+      <circle
+        cx="48"
+        cy="48"
+        r={radius}
+        fill="none"
+        stroke={positive}
+        strokeWidth="10"
+        strokeLinecap="round"
+        strokeDasharray={`${positiveLength} ${circumference}`}
+        transform="rotate(-90 48 48)"
+      />
+      <circle
+        cx="48"
+        cy="48"
+        r={radius}
+        fill="none"
+        stroke={negative}
+        strokeWidth="10"
+        strokeLinecap="round"
+        strokeDasharray={`${negativeLength} ${circumference}`}
+        strokeDashoffset={-positiveLength}
+        transform="rotate(-90 48 48)"
+      />
+      <text x="48" y="51" textAnchor="middle">
+        {safePercent}%
+      </text>
+    </svg>
   )
 }
 
 function draftFromBrowse(deviceId: string, deviceName: string, node: BrowseNode): TagFormState {
   const displayName = getDisplayName(node.nodeId)
-  const match = displayName.match(/HMI_DB\.HMI_Faceplates\[(\d+)\]/i)
+  const match = displayName.match(/HMI_DB\.(?:HMI_Faceplates|Faceplates)\[(\d+)\]/i)
   return { deviceId, nodeId: node.nodeId, browseName: node.browseName || node.displayName, displayName, dataType: node.dataType ?? 'Unknown', samplingIntervalMs: 200, publishingIntervalMs: 200, allowWrite: node.writable, enabled: true, groupKey: match ? `${deviceName}_HMI${match[1]}` : '未分组' }
 }
 
@@ -241,9 +304,13 @@ function App() {
   const [batchDrafts, setBatchDrafts] = useState<TagFormState[]>([])
   const [deviceForm, setDeviceForm] = useState<DeviceFormState>(blankDeviceForm())
   const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null)
-  const [historyByTag, setHistoryByTag] = useState<Record<string, HistoryPoint[]>>({})
+  const [dashboardTrendByFaceplate, setDashboardTrendByFaceplate] = useState<Record<number, FaceplateTrend>>({
+    1: { pressure: [], flow: [] },
+    2: { pressure: [], flow: [] },
+  })
 
   const runtimeNameById = useMemo(() => Object.fromEntries(runtime.devices.map((d) => [d.deviceId, d.deviceName])), [runtime.devices])
+  const runtimeDeviceStatusById = useMemo(() => Object.fromEntries(runtime.devices.map((d) => [d.deviceId, d.status])), [runtime.devices])
   const deviceNameById = useMemo(() => Object.fromEntries(devices.map((d) => [d.id, d.name])), [devices])
   const snapshotByTagId = useMemo(() => new Map(runtime.snapshots.map((snapshot) => [snapshot.tagId, snapshot])), [runtime.snapshots])
   const activeDeviceId = selectedDeviceId || devices[0]?.id || runtime.devices[0]?.deviceId || ''
@@ -258,57 +325,258 @@ function App() {
     return Array.from(unique)
   }, [runtime.tags, runtimeNameById])
 
-  const dashboardGroups = useMemo(() => {
-    const selected = pickDashboardGroups(runtime.tags, runtimeNameById)
-    return selected.map<DashboardGroup>((group) => {
-      const numericTags = group.tags.filter((tag) => toNumericValue(snapshotByTagId.get(tag.id)?.value ?? null) !== null)
-      const pressure = pickExactTag(group.tags, 'pressure', /pressure|press|inletpress|outletpress/i) ?? numericTags[0]
-      const flow = pickExactTag(group.tags, 'flow', /flow/i) ?? numericTags.find((tag) => tag.id !== pressure?.id)
-      const pressureSeries = getSeriesPoints(pressure, historyByTag, snapshotByTagId)
-      const flowSeries = getSeriesPoints(flow, historyByTag, snapshotByTagId)
-      const metrics = numericTags
-        .filter((tag) => tag.id !== pressure?.id && tag.id !== flow?.id)
-        .map((tag) => {
-          const snapshot = snapshotByTagId.get(tag.id)
-          const numeric = toNumericValue(snapshot?.value ?? null)
-          if (numeric === null) return null
-          return {
-            tag,
-            label: shortLabel(tag),
-            value: formatNumberWithUnit(numeric, inferUnit(shortLabel(tag) || tag.displayName)),
+  function faceplatePathPrefix(faceplateIndex: number) {
+    return new RegExp(`^HMI_DB\\.(?:HMI_Faceplates|Faceplates)\\[${faceplateIndex}\\]\\.`, 'i')
+  }
+
+  function faceplateBarcodePattern(faceplateIndex: number) {
+    return new RegExp(`^HMI_DB\\.barcode\\[${faceplateIndex}\\]$`, 'i')
+  }
+
+  function shortLabelForFaceplate(tag: TagDefinition, faceplateIndex: number) {
+    const displayName = getDisplayName(tag.nodeId)
+    const faceplatePrefix = faceplatePathPrefix(faceplateIndex)
+    if (faceplatePrefix.test(displayName)) return displayName.replace(faceplatePrefix, '')
+    if (faceplateBarcodePattern(faceplateIndex).test(displayName)) return 'barcode'
+    return displayName
+  }
+
+  const dashboardTagsByFaceplate = useMemo(() => {
+    const result: Record<number, TagDefinition[]> = {}
+    for (const index of dashboardFaceplateIndexes) {
+      const prefix = faceplatePathPrefix(index)
+      const barcodePattern = faceplateBarcodePattern(index)
+      result[index] = runtime.tags.filter((tag) => {
+        const displayName = getDisplayName(tag.nodeId)
+        return prefix.test(displayName) || barcodePattern.test(displayName)
+      })
+    }
+    return result
+  }, [dashboardFaceplateIndexes, runtime.tags])
+
+  const dashboardTagMapByFaceplate = useMemo(() => {
+    const result: Record<number, Map<string, TagDefinition>> = {}
+    for (const index of dashboardFaceplateIndexes) {
+      result[index] = new Map(
+        (dashboardTagsByFaceplate[index] ?? []).map((tag) => [shortLabelForFaceplate(tag, index).toLowerCase(), tag] as const),
+      )
+    }
+    return result
+  }, [dashboardFaceplateIndexes, dashboardTagsByFaceplate])
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const now = Date.now()
+      setDashboardTrendByFaceplate((current) => {
+        const next: Record<number, FaceplateTrend> = { ...current }
+        for (const index of dashboardFaceplateIndexes) {
+          const map = dashboardTagMapByFaceplate[index]
+          const tags = dashboardTagsByFaceplate[index] ?? []
+          const pressureTag = map.get('pressure') ?? tags.find((item) => /pressure|press/i.test(shortLabelForFaceplate(item, index)))
+          const flowTag = map.get('flow') ?? tags.find((item) => /flow/i.test(shortLabelForFaceplate(item, index)))
+          const pressureValue = toNumericValue(pressureTag ? snapshotByTagId.get(pressureTag.id)?.value ?? null : null)
+          const flowValue = toNumericValue(flowTag ? snapshotByTagId.get(flowTag.id)?.value ?? null : null)
+          const keepAfter = now - 120_000
+          const trend = current[index] ?? { pressure: [], flow: [] }
+          next[index] = {
+            pressure: [...trend.pressure, { ts: now, value: pressureValue ?? 0 }].filter((item) => item.ts >= keepAfter),
+            flow: [...trend.flow, { ts: now, value: flowValue ?? 0 }].filter((item) => item.ts >= keepAfter),
           }
-        })
-        .filter((item): item is DashboardMetric => Boolean(item))
-        .slice(0, 6)
-      return {
-        name: group.name,
-        tags: group.tags,
-        pressure,
-        flow,
-        pressureSeries,
-        flowSeries,
-        metrics,
-      }
+        }
+        return next
+      })
+    }, 500)
+    return () => window.clearInterval(timer)
+  }, [dashboardFaceplateIndexes, dashboardTagMapByFaceplate, dashboardTagsByFaceplate, snapshotByTagId])
+
+  function dashboardField(faceplateIndex: number, name: string, fallbackPattern?: RegExp): DashboardField {
+    const tags = dashboardTagsByFaceplate[faceplateIndex] ?? []
+    const tagMap = dashboardTagMapByFaceplate[faceplateIndex]
+    const tag =
+      tagMap.get(name.toLowerCase()) ??
+      (fallbackPattern ? tags.find((item) => fallbackPattern.test(shortLabelForFaceplate(item, faceplateIndex).toLowerCase())) : undefined)
+    const key = name.toLowerCase()
+    const digitsMap: Record<string, number> = {
+      voltage: 1,
+      current: 2,
+      pressure: 2,
+      inletpressure: 1,
+      flow: 1,
+      power: 0,
+    }
+    const snapshot = tag ? snapshotByTagId.get(tag.id) : undefined
+    const numeric = toNumericValue(snapshot?.value ?? null)
+    return {
+      tag,
+      snapshot,
+      numeric,
+      text: formatNumberWithUnit(numeric, inferUnit(name), digitsMap[key]),
+    }
+  }
+
+  const dashboardDataList = useMemo(() => {
+    return dashboardFaceplateIndexes.map((faceplateIndex) => {
+    const pressure = dashboardField(faceplateIndex, 'pressure', /pressure|press/)
+    const flow = dashboardField(faceplateIndex, 'flow', /flow/)
+    const inletPressure = dashboardField(faceplateIndex, 'inletpressure', /inletpressure|inletpress/)
+    const inletTemp = dashboardField(faceplateIndex, 'inlettemp', /inlettemp|temperature|temp/)
+    const voltage = dashboardField(faceplateIndex, 'voltage', /voltage/)
+    const current = dashboardField(faceplateIndex, 'current', /current/)
+    const frequency = dashboardField(faceplateIndex, 'frequency', /frequency|freq/)
+    const power = dashboardField(faceplateIndex, 'power', /power$/)
+    const passNumber = dashboardField(faceplateIndex, 'passnumber', /passnumber/)
+    const failNumber = dashboardField(faceplateIndex, 'failnumber', /failnumber/)
+    const errCode = dashboardField(faceplateIndex, 'errcode', /errcode/)
+    const workFlow = dashboardField(faceplateIndex, 'workflow', /workflow/)
+    const enduranceProcess = dashboardField(faceplateIndex, 'enduranceprocess', /enduranceprocess/)
+    const triggerOn = dashboardField(faceplateIndex, 'triggeronprocess', /triggeronprocess/)
+    const triggerOff = dashboardField(faceplateIndex, 'triggeroffprocess', /triggeroffprocess/)
+    const lastTimeHour = dashboardField(faceplateIndex, 'lasttimehour', /lasttimehour/)
+    const lastTimeMinute = dashboardField(faceplateIndex, 'lasttimeminute', /lasttimeminute/)
+    const stationNumber = dashboardField(faceplateIndex, 'stationnumber', /stationnumber/)
+    const barcode = dashboardField(faceplateIndex, 'barcode', /barcode/)
+    const now = Date.now()
+    const faceplateTrend = dashboardTrendByFaceplate[faceplateIndex] ?? { pressure: [], flow: [] }
+    const pressureSeries = faceplateTrend.pressure.length > 0 ? faceplateTrend.pressure : [{ ts: now, value: pressure.numeric ?? 0 }]
+    const flowSeries = faceplateTrend.flow.length > 0 ? faceplateTrend.flow : [{ ts: now, value: flow.numeric ?? 0 }]
+    const endurancePercent = Math.max(0, Math.min(100, Math.round(enduranceProcess.numeric ?? 0)))
+    const triggerOnPercent = Math.max(0, Math.min(100, Math.round(triggerOn.numeric ?? 0)))
+    const triggerOffPercent = Math.max(0, Math.min(100, Math.round(triggerOff.numeric ?? 0)))
+    const factoryTotal = (passNumber.numeric ?? 0) + (failNumber.numeric ?? 0)
+    const passPercent = factoryTotal > 0 ? Math.round(((passNumber.numeric ?? 0) / factoryTotal) * 100) : 0
+    const failPercent = factoryTotal > 0 ? Math.round(((failNumber.numeric ?? 0) / factoryTotal) * 100) : 0
+    const status = errCodeToStatus(Math.round(errCode.numeric ?? 0))
+    const workflowValue = Math.round(workFlow.numeric ?? 0)
+    const workflowText = workflowToLabel(workflowValue)
+    const workflowClass = workflowValue === 0 ? 'standby' : 'running'
+    const enduranceMode = dashboardField(faceplateIndex, 'automode0_factory1_endurance', /automode0[_]?factory1[_]?endurance/)
+    const showEnduranceCard = Math.round(enduranceMode.numeric ?? 0) > 0
+    const enduranceDuration = `${Math.max(0, lastTimeHour.numeric ?? 0)}h ${Math.max(0, lastTimeMinute.numeric ?? 0)}min`
+    const faceplateTags = dashboardTagsByFaceplate[faceplateIndex] ?? []
+    const hasConnectedDevice = faceplateTags.some((tag) => {
+      const deviceState = (runtimeDeviceStatusById[tag.deviceId] ?? '').toLowerCase()
+      return (deviceState.includes('connect') || deviceState === '') && !deviceState.includes('dis')
     })
-  }, [historyByTag, runtime.tags, runtimeNameById, snapshotByTagId])
+    const hasGoodSnapshot = faceplateTags.some((tag) => {
+      const snapshot = snapshotByTagId.get(tag.id)
+      if (!snapshot) return false
+      const q = (snapshot.quality ?? '').toLowerCase()
+      const s = (snapshot.connectionState ?? '').toLowerCase()
+      const qualityOk = q === '' || q === 'good' || q === '0' || q === '00000000' || q === '0000000'
+      const stateOk = s === '' || s.includes('connect')
+      return qualityOk && stateOk
+    })
+    const faceplateDeviceStatuses = Array.from(
+      new Set(faceplateTags.map((tag) => (runtimeDeviceStatusById[tag.deviceId] ?? '').toLowerCase()).filter((value) => value !== '')),
+    )
+    const hasDeviceDisconnecting = faceplateDeviceStatuses.some((status) =>
+      status.includes('reconnect') || status.includes('disconnect') || status.includes('offline') || status.includes('fault') || status.includes('error'),
+    )
+    const connected = !hasDeviceDisconnecting && (hasConnectedDevice || hasGoodSnapshot)
+    const boardHeadClass =
+      !connected
+        ? 'disconnected'
+        : (errCode.numeric ?? 0) > 0
+          ? 'fault'
+          : (workFlow.numeric ?? 0) > 0
+            ? 'connected'
+            : 'standby'
+
+    return {
+      faceplateIndex,
+      available: (dashboardTagsByFaceplate[faceplateIndex] ?? []).length > 0,
+      title: stationNumber.numeric !== null ? `工位${stationNumber.numeric}` : `工位${faceplateIndex}`,
+      stationText:
+        barcode.snapshot?.value === null || barcode.snapshot?.value === undefined
+          ? '-'
+          : String(barcode.snapshot.value).trim() || '-',
+      deviceStatus: connected ? `Connected / ${status.text}` : 'Disconnected',
+      boardHeadClass,
+      risk: { label: status.className === 'normal' ? '正常' : '异常', className: status.className },
+      statusText: status.text,
+      workflowText,
+      workflowClass,
+      pressure,
+      flow,
+      inletPressure,
+      inletTemp,
+      voltage,
+      current,
+      frequency,
+      power,
+      passNumber,
+      failNumber,
+      errCode,
+      enduranceProcess,
+      triggerOn,
+      triggerOff,
+      pressureSeries,
+      flowSeries,
+      endurancePercent,
+      passPercent,
+      failPercent,
+      showEnduranceCard,
+      enduranceDuration,
+      triggerOnPercent,
+      triggerOffPercent,
+    }
+  })
+  }, [dashboardFaceplateIndexes, dashboardTagsByFaceplate, dashboardTrendByFaceplate, runtimeDeviceStatusById, snapshotByTagId])
 
   const filteredRuntimeTags = useMemo(() => {
-    return runtime.tags.filter((tag) => {
+    const tags = runtime.tags.filter((tag) => {
       const group = getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag)
       return groupFilter === 'all' || group === groupFilter
     })
+
+    return [...tags].sort((left, right) => {
+      const leftGroup = getResolvedGroup(runtimeNameById[left.deviceId] ?? '', left)
+      const rightGroup = getResolvedGroup(runtimeNameById[right.deviceId] ?? '', right)
+      const groupCompare = leftGroup.localeCompare(rightGroup, 'zh-CN', { numeric: true, sensitivity: 'base' })
+      if (groupCompare !== 0) return groupCompare
+
+      return getDisplayName(left.nodeId).localeCompare(getDisplayName(right.nodeId), 'zh-CN', { numeric: true, sensitivity: 'base' })
+    })
   }, [groupFilter, runtime.tags, runtimeNameById])
+
+  const runtimeRows = useMemo(() => {
+    return filteredRuntimeTags.map((tag, index) => {
+      const snapshot = snapshotByTagId.get(tag.id)
+      const stat = statusOf(snapshot, runtimeDeviceStatusById[tag.deviceId])
+      const group = getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag)
+      const value = formatValue(tag, snapshot)
+      return {
+        risk: index + 1,
+        tag,
+        snapshot,
+        stat,
+        group,
+        value,
+        time: compactTimeText(snapshot),
+      }
+    })
+  }, [filteredRuntimeTags, runtimeDeviceStatusById, runtimeNameById, snapshotByTagId])
+
+  async function openVnc(faceplateIndex: number) {
+    const hostByFaceplate: Record<number, string> = {
+      1: '192.168.88.11',
+      2: '192.168.88.12',
+    }
+    const host = hostByFaceplate[faceplateIndex]
+    if (!host) return
+    try {
+      const result = await openVncTool(host, '111111')
+      setStatusMessage(result.message || `已尝试打开 RealVNC: ${host}:5900`)
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : `打开 RealVNC 失败: ${host}:5900`)
+    }
+  }
 
   async function loadWorkspace() {
     try {
       setLoading(true)
       const [overview, deviceList, tags] = await Promise.all([getRuntimeOverview(), getDevices(), getTags()])
       setRuntime(overview)
-      setHistoryByTag((current) => {
-        let next = current
-        for (const snapshot of overview.snapshots) next = updateHistoryMap(next, snapshot)
-        return next
-      })
       setDevices(deviceList)
       setTagRows(tags)
       if (!selectedDeviceId && deviceList[0]) setSelectedDeviceId(deviceList[0].id)
@@ -325,11 +593,6 @@ function App() {
       setLoading(true)
       const overview = await getRuntimeOverview()
       setRuntime(overview)
-      setHistoryByTag((current) => {
-        let next = current
-        for (const snapshot of overview.snapshots) next = updateHistoryMap(next, snapshot)
-        return next
-      })
       setStatusMessage('监控数据已刷新')
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : '刷新失败')
@@ -358,7 +621,6 @@ function App() {
     const connection = new HubConnectionBuilder().withUrl('/hubs/realtime').withAutomaticReconnect().configureLogging(LogLevel.Information).build()
     connection.on('tagSnapshotUpdated', (snapshot: TagSnapshot) => {
       setRuntime((current) => ({ ...current, snapshots: [...current.snapshots.filter((item) => item.tagId !== snapshot.tagId), snapshot] }))
-      setHistoryByTag((current) => updateHistoryMap(current, snapshot))
     })
     connection.on('deviceStatusChanged', (event: { deviceId: string; status: string; message: string }) => {
       setRuntime((current) => ({ ...current, devices: current.devices.map((device) => (device.deviceId === event.deviceId ? { ...device, status: event.status } : device)) }))
@@ -513,7 +775,7 @@ function App() {
       <section className="runtime-content">
         <header className="runtime-topbar">
           <div className="runtime-title-wrap">
-            <h1>实时监控</h1>
+            <h1>清洗机测试系统</h1>
           </div>
           <div className="runtime-topbar-actions">
             <button type="button" className="icon-circle">◔</button>
@@ -522,50 +784,51 @@ function App() {
           </div>
         </header>
 
-        <section className="runtime-toolbar-row">
-          <div className="runtime-selected">分组筛选</div>
-          <div className="runtime-actions-group">
-            <select className="runtime-filter" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)}>
-              <option value="all">全部分组</option>
-              {groups.filter((g) => g !== 'all').map((g) => <option key={g} value={g}>{g}</option>)}
-            </select>
+        <section className="runtime-toolbar-row runtime-toolbar-row--compact">
+          <div className="runtime-toolbar-meta">
+            <span>{runtimeRows.length} 条变量</span>
+            <span>{loading ? '刷新中' : statusMessage}</span>
           </div>
-          <button type="button" className="primary-project-button" onClick={() => void refreshRuntime()} disabled={loading}>
-            + {loading ? '刷新中' : '刷新'}
-          </button>
         </section>
 
         <section className="runtime-table-wrap">
           <div className="runtime-table-shell">
             <table className="runtime-table project-table">
               <colgroup>
-                <col style={{ width: '280px' }} />
-                <col style={{ width: '140px' }} />
-                <col style={{ width: '120px' }} />
-                <col style={{ width: '220px' }} />
-                <col style={{ width: '110px' }} />
-                <col style={{ width: '240px' }} />
-                <col style={{ width: '150px' }} />
+                <col style={{ width: '54px' }} />
+                <col style={{ width: '360px' }} />
+                <col style={{ width: '92px' }} />
+                <col style={{ width: '86px' }} />
+                <col style={{ width: '164px' }} />
+                <col style={{ width: '136px' }} />
+                <col />
+                <col style={{ width: '132px' }} />
               </colgroup>
               <thead>
                 <tr>
+                  <th>Risk</th>
                   <th>变量名称</th>
                   <th>当前值</th>
                   <th>状态</th>
                   <th>最新时间</th>
-                  <th>分组</th>
+                  <th>
+                    <div className="table-filter-head">
+                      <span>分组</span>
+                      <select className="header-filter" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} aria-label="按分组筛选">
+                        <option value="all">全部</option>
+                        {groups.filter((g) => g !== 'all').map((g) => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                    </div>
+                  </th>
                   <th>NodeId</th>
                   <th>写入</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredRuntimeTags.map((tag) => {
-                  const snapshot = runtime.snapshots.find((item) => item.tagId === tag.id)
-                  const stat = statusOf(snapshot)
-                  const group = getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag)
-                  const value = formatValue(tag, snapshot)
+                {runtimeRows.map(({ risk, tag, stat, group, value, time }) => {
                   return (
                     <tr key={tag.id}>
+                      <td className="row-index">{risk}</td>
                       <td>
                         <div className="project-name">{tag.displayName}</div>
                       </td>
@@ -575,10 +838,10 @@ function App() {
                       <td>
                         <span className={`project-status ${stat.className === 'normal' ? 'green' : 'red'}`}>
                           <span className="dot" />
-                          {stat.className === 'normal' ? '正常' : '异常'}
+                          {stat.className === 'normal' ? 'OK' : 'NG'}
                         </span>
                       </td>
-                      <td>{timeText(snapshot)}</td>
+                      <td className="time-cell">{time}</td>
                       <td>
                         <span className="project-pill">{group}</span>
                       </td>
@@ -611,70 +874,171 @@ function App() {
   )
 
   const dashboardPage = (
-    <section className="page-shell">
-      <header className="page-header">
-        <div className="page-copy">
-          <h1>Dashboard</h1>
-          <p>两大分组面板，Pressure 和 Flow 共用同一张趋势图，其余字段以数值和单位呈现</p>
+    <section className="dashboard-shell">
+      <header className="dashboard-topbar">
+        <div className="dashboard-topbar-title">
+          <h1>清洗机测试系统</h1>
         </div>
-        <div className="page-meta">
-          <span className="status-line">{dashboardGroups.length ? `${dashboardGroups.length} 个分组` : '暂无分组'}</span>
-          <button type="button" className="soft-action" onClick={() => void refreshRuntime()} disabled={loading}>
-            {loading ? '刷新中' : '刷新'}
+        <div className="dashboard-topbar-meta">
+          <span className="dashboard-topbar-pill normal">模板: HMI_DB.Faceplates[1] / [2]</span>
+          <button type="button" className="dashboard-icon-button" aria-label="通知">
+            •
           </button>
+          <button type="button" className="dashboard-icon-button" aria-label="帮助">
+            ?
+          </button>
+          <div className="dashboard-avatar">SC</div>
         </div>
       </header>
 
-      <section className="dashboard-layout">
-        {dashboardGroups.length > 0 ? (
-          dashboardGroups.map((group) => {
-            const pressureSnapshot = group.pressure ? snapshotByTagId.get(group.pressure.id) : undefined
-            const flowSnapshot = group.flow ? snapshotByTagId.get(group.flow.id) : undefined
-            const pressureUnit = inferUnit(group.pressure ? shortLabel(group.pressure) : 'Pressure')
-            const flowUnit = inferUnit(group.flow ? shortLabel(group.flow) : 'Flow')
-            const pressureText = group.pressure ? formatNumberWithUnit(toNumericValue(pressureSnapshot?.value ?? null), pressureUnit) : '暂无数据'
-            const flowText = group.flow ? formatNumberWithUnit(toNumericValue(flowSnapshot?.value ?? null), flowUnit) : '暂无数据'
+      <section className="dashboard-canvas">
+        {dashboardDataList.some((item) => item.available) ? (
+          <div className="dashboard-center">
+            <div className="dashboard-template-grid">
+            {dashboardDataList.map((dashboardData) => (
+            <article key={`faceplate-${dashboardData.faceplateIndex}`} className="dashboard-board">
+              <header className={`dashboard-board-head ${dashboardData.boardHeadClass}`}>
+                <div className="dashboard-board-head-main">
+                  <div className="dashboard-board-tag">{dashboardData.title}</div>
+                </div>
+                <button
+                  type="button"
+                  className="dashboard-vnc-button"
+                  onClick={() => void openVnc(dashboardData.faceplateIndex)}
+                  aria-label={`打开 VNC ${dashboardData.faceplateIndex}`}
+                >
+                  VNC
+                </button>
+              </header>
 
-            return (
-              <article key={group.name} className="dashboard-panel">
-                <div className="panel-head">
-                  <div>
-                    <div className="panel-title">{group.name}</div>
-                    <div className="panel-subtitle">{group.tags.length} 个点位 · 只显示数值和单位</div>
+              <section className="dashboard-grid">
+                <div className="dashboard-barcode-card">
+                  <div className="dashboard-barcode-row">
+                    <div className="dashboard-card-label">Barcode</div>
+                    <div className="dashboard-barcode-value">{dashboardData.stationText}</div>
                   </div>
-                  <span className="status-line">Pressure / Flow</span>
                 </div>
 
-                <div className="dashboard-chart-card">
-                  <TrendChart
-                    series={[
-                      { label: 'Pressure', unit: pressureUnit, color: '#5d57ed', points: group.pressureSeries, current: pressureText },
-                      { label: 'Flow', unit: flowUnit, color: '#1b9953', points: group.flowSeries, current: flowText },
-                    ]}
-                  />
-                </div>
-
-                <div className="dashboard-metrics">
-                  <div className="dashboard-metric">
-                    <span>Pressure</span>
-                    <strong>{pressureText}</strong>
-                  </div>
-                  <div className="dashboard-metric">
-                    <span>Flow</span>
-                    <strong>{flowText}</strong>
-                  </div>
-                  {group.metrics.map((metric) => (
-                    <div key={metric.tag.id} className="dashboard-metric">
-                      <span>{metric.label}</span>
-                      <strong>{metric.value}</strong>
+                <div className="dashboard-inlet-card">
+                  <div className="dashboard-card-label">Inlet</div>
+                  <div className="dashboard-inlet-values inlet-stat-grid">
+                    <div className="inlet-stat inlet-blue">
+                      <span>Pressure</span>
+                      <strong>{dashboardData.inletPressure.text}</strong>
                     </div>
-                  ))}
+                    <div className="inlet-stat inlet-yellow">
+                      <span>Temperature</span>
+                      <strong>{dashboardData.inletTemp.text}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="dashboard-power-card">
+                  <div className="dashboard-card-label">Power</div>
+                  <div className="dashboard-power-grid">
+                    <div className="power-stat power-blue">
+                      <span>Voltage</span>
+                      <strong>{dashboardData.voltage.text}</strong>
+                    </div>
+                    <div className="power-stat power-red">
+                      <span>Current</span>
+                      <strong>{dashboardData.current.text}</strong>
+                    </div>
+                    <div className="power-stat power-yellow">
+                      <span>Frequency</span>
+                      <strong>{dashboardData.frequency.text}</strong>
+                    </div>
+                    <div className="power-stat power-green">
+                      <span>Power</span>
+                      <strong>{dashboardData.power.text}</strong>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="dashboard-mini-card pressure-card">
+                  <div className="dashboard-mini-head">
+                    <span>Pressure</span>
+                    <strong>{dashboardData.pressure.text}</strong>
+                  </div>
+                  <MiniSparkline points={dashboardData.pressureSeries} color="#e05b61" />
+                </div>
+
+                <div className="dashboard-mini-card flow-card">
+                  <div className="dashboard-mini-head">
+                    <span>Flow</span>
+                    <strong>{dashboardData.flow.text}</strong>
+                  </div>
+                  <MiniSparkline points={dashboardData.flowSeries} color="#0d6efd" />
+                </div>
+              </section>
+
+                <section className="dashboard-lower-stack">
+                  {dashboardData.showEnduranceCard ? (
+                    <article className="dashboard-test-card">
+                    <div className="dashboard-test-head">
+                      <div className="dashboard-title-row">
+                        <div className="dashboard-card-title">耐久测试</div>
+                        <div className="dashboard-card-value">{dashboardData.enduranceDuration}</div>
+                      </div>
+                    </div>
+                    <div className="dashboard-endurance-body">
+                      <DashboardProgressRing percent={dashboardData.endurancePercent} color="#26a269" />
+                      <div className="dashboard-bars">
+                        <div className="dashboard-bar-row">
+                          <div className="dashboard-bar-label">开枪</div>
+                          <div className="dashboard-bar-track">
+                            <div className="dashboard-bar-fill positive" style={{ width: `${dashboardData.triggerOnPercent}%` }} />
+                          </div>
+                        </div>
+                        <div className="dashboard-bar-row">
+                          <div className="dashboard-bar-label">关枪</div>
+                          <div className="dashboard-bar-track">
+                            <div className="dashboard-bar-fill negative" style={{ width: `${dashboardData.triggerOffPercent}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </article>
+                ) : (
+                  <article className="dashboard-test-card">
+                    <div className="dashboard-test-head">
+                      <div className="dashboard-title-row">
+                        <div className="dashboard-card-title">出厂测试</div>
+                        <div className={`dashboard-card-value workflow-pill ${dashboardData.workflowClass}`}>{dashboardData.workflowText}</div>
+                      </div>
+                    </div>
+                    <div className="dashboard-endurance-body">
+                      <DashboardDualProgressRing percent={dashboardData.passPercent} positive="#6159f4" negative="#f08a7b" />
+                      <div className="dashboard-bars">
+                        <div className="dashboard-bar-row">
+                          <div className="dashboard-bar-label">Pass</div>
+                          <div className="dashboard-bar-track">
+                            <div className="dashboard-bar-fill positive" style={{ width: `${dashboardData.passPercent}%` }} />
+                          </div>
+                          <strong>{dashboardData.passNumber.text}</strong>
+                        </div>
+                        <div className="dashboard-bar-row">
+                          <div className="dashboard-bar-label">NG</div>
+                          <div className="dashboard-bar-track">
+                            <div className="dashboard-bar-fill negative" style={{ width: `${dashboardData.failPercent}%` }} />
+                          </div>
+                          <strong>{dashboardData.failNumber.text}</strong>
+                        </div>
+                      </div>
+                    </div>
+                    </article>
+                  )}
+                </section>
+
+                <div className={`dashboard-alert ${dashboardData.risk.className}`}>
+                  <span>{dashboardData.statusText}</span>
                 </div>
               </article>
-            )
-          })
+            ))}
+            </div>
+          </div>
         ) : (
-          <div className="empty-dashboard">暂无 Dashboard 数据，请先连接设备并刷新。</div>
+          <div className="dashboard-empty-state">暂无 HMI_DB.Faceplates[1] / [2] 数据，请先确认点位订阅已恢复。</div>
         )}
       </section>
     </section>

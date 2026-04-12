@@ -97,3 +97,10 @@ export function writeTag(tagId: string, value: string) {
 export function getRuntimeOverview() {
   return request<RuntimeOverview>('/api/runtime/overview')
 }
+
+export function openVncTool(host: string, password: string) {
+  return request<{ message: string }>('/api/tools/vnc/open', {
+    method: 'POST',
+    body: JSON.stringify({ host, password }),
+  })
+}
