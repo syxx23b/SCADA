@@ -155,7 +155,7 @@
 .dashboard-bar-fill { height: 100%; border-radius: 999px; }
 .dashboard-bar-fill.positive { background: linear-gradient(90deg, #8f88ff 0%, #6159f4 100%); }
 .dashboard-bar-fill.negative { background: linear-gradient(90deg, #f7b4aa 0%, #f08a7b 100%); }
-.dashboard-bar-row strong { font-size: var(--dash-font-lg); color: #222834; font-weight: 700; }
+.dashboard-bar-row strong { font-size: var(--dash-font-lg); color: var(--dash-blue); font-weight: 700; }
 .dashboard-empty-state { width: min(404px, 100%); min-height: 320px; display: grid; place-items: center; color: #8a93a9; border: 1px dashed #dce1ec; border-radius: 20px; background: #fff; text-align: center; padding: 20px; }
 .dashboard-editor { width: min(360px, 100%); background: #fff; border: 1px solid #eff0f6; border-radius: 20px; padding: 16px; box-shadow: 0 10px 24px rgba(34, 40, 52, 0.04); }
 .dashboard-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 12px; }

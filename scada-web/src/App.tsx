@@ -115,6 +115,11 @@ function formatNumberWithUnit(value: number | null, unit: string, digits?: numbe
   return unit ? `${rounded} ${unit}` : rounded
 }
 
+function formatCount(value: number | null) {
+  if (value === null) return '-'
+  return Number.isInteger(value) ? value.toString() : Math.round(value).toString()
+}
+
 function normalizeTrend(points: HistoryPoint[]) {
   if (points.length === 0) return []
   const usePoints = points.length === 1 ? [{ ts: points[0].ts - 60_000, value: points[0].value }, points[0]] : points
@@ -519,6 +524,8 @@ function App() {
       enduranceDuration,
       triggerOnPercent,
       triggerOffPercent,
+      passCountText: formatCount(passNumber.numeric),
+      failCountText: formatCount(failNumber.numeric),
     }
   })
   }, [dashboardFaceplateIndexes, dashboardTagsByFaceplate, dashboardTrendByFaceplate, runtimeDeviceStatusById, snapshotByTagId])
@@ -1008,21 +1015,21 @@ function App() {
                       </div>
                     </div>
                     <div className="dashboard-endurance-body">
-                      <DashboardDualProgressRing percent={dashboardData.passPercent} positive="#6159f4" negative="#f08a7b" />
+                        <DashboardDualProgressRing percent={dashboardData.passPercent} positive="#6159f4" negative="#f08a7b" />
                       <div className="dashboard-bars">
                         <div className="dashboard-bar-row">
-                          <div className="dashboard-bar-label">Pass</div>
+                          <div className="dashboard-bar-label">合格</div>
                           <div className="dashboard-bar-track">
                             <div className="dashboard-bar-fill positive" style={{ width: `${dashboardData.passPercent}%` }} />
                           </div>
-                          <strong>{dashboardData.passNumber.text}</strong>
+                          <strong>{dashboardData.passCountText}</strong>
                         </div>
                         <div className="dashboard-bar-row">
-                          <div className="dashboard-bar-label">NG</div>
+                          <div className="dashboard-bar-label">失败</div>
                           <div className="dashboard-bar-track">
                             <div className="dashboard-bar-fill negative" style={{ width: `${dashboardData.failPercent}%` }} />
                           </div>
-                          <strong>{dashboardData.failNumber.text}</strong>
+                          <strong>{dashboardData.failCountText}</strong>
                         </div>
                       </div>
                     </div>

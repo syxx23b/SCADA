@@ -48,9 +48,12 @@ var app = builder.Build();
 
 app.UseCors();
 app.UseAuthorization();
+app.UseDefaultFiles();
+app.UseStaticFiles();
 
 app.MapControllers();
 app.MapHub<RealtimeHub>("/hubs/realtime");
+app.MapFallbackToFile("index.html");
 
 app.Run();
 
