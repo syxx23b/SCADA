@@ -319,16 +319,7 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
         {
             _configuration ??= await CreateConfigurationAsync(cancellationToken);
 
-            var endpoint = await CoreClientUtils.SelectEndpointAsync(
-                _configuration,
-                _options.EndpointUrl,
-                UseSecurity(_options),
-                15000,
-                cancellationToken);
-
-            endpoint.SecurityMode = ParseSecurityMode(_options.SecurityMode);
-            endpoint.SecurityPolicyUri = ParseSecurityPolicy(_options.SecurityPolicy);
-
+            var endpoint = await ResolveEndpointAsync(_configuration, _options, cancellationToken);
             var configuredEndpoint = new ConfiguredEndpoint(null, endpoint, EndpointConfiguration.Create(_configuration));
             var session = await Session.Create(
                 _configuration,
@@ -427,6 +418,62 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
         await application.CheckApplicationInstanceCertificatesAsync(false, 0, cancellationToken);
 
         return configuration;
+    }
+
+    private async Task<EndpointDescription> ResolveEndpointAsync(
+        ApplicationConfiguration configuration,
+        OpcUaConnectionOptions options,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var endpoint = await CoreClientUtils.SelectEndpointAsync(
+                configuration,
+                options.EndpointUrl,
+                UseSecurity(options),
+                15000,
+                cancellationToken);
+
+            endpoint.EndpointUrl = options.EndpointUrl;
+            endpoint.SecurityMode = ParseSecurityMode(options.SecurityMode);
+            endpoint.SecurityPolicyUri = ParseSecurityPolicy(options.SecurityPolicy);
+            return endpoint;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(exception, "Failed to discover OPC UA endpoint for {EndpointUrl}. Falling back to direct endpoint connection.", options.EndpointUrl);
+            return CreateDirectEndpoint(options);
+        }
+    }
+
+    private static EndpointDescription CreateDirectEndpoint(OpcUaConnectionOptions options)
+    {
+        var tokenType = options.AuthenticationMode == OpcUaAuthenticationMode.UsernamePassword
+            ? UserTokenType.UserName
+            : UserTokenType.Anonymous;
+
+        return new EndpointDescription
+        {
+            EndpointUrl = options.EndpointUrl,
+            SecurityMode = ParseSecurityMode(options.SecurityMode),
+            SecurityPolicyUri = ParseSecurityPolicy(options.SecurityPolicy),
+            TransportProfileUri = Profiles.UaTcpTransport,
+            UserIdentityTokens = new UserTokenPolicyCollection
+            {
+                new()
+                {
+                    PolicyId = tokenType == UserTokenType.Anonymous ? "anonymous" : "username",
+                    TokenType = tokenType,
+                    SecurityPolicyUri = SecurityPolicies.None
+                }
+            },
+            Server = new ApplicationDescription
+            {
+                ApplicationName = options.DeviceName,
+                ApplicationType = ApplicationType.Server,
+                DiscoveryUrls = new StringCollection { options.EndpointUrl }
+            }
+        };
     }
 
     private IUserIdentity CreateUserIdentity(OpcUaConnectionOptions options)

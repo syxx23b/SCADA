@@ -42,19 +42,37 @@ function getDisplayName(nodeId: string) {
 }
 
 function getResolvedGroup(deviceName: string, tag: TagDefinition) {
+  const recipeRule = resolveRecipeRule(tag.nodeId)
+  if (recipeRule) return recipeRule.groupKey
   const explicit = tag.groupKey?.trim()
   if (explicit) return explicit
   const match = getDisplayName(tag.nodeId).match(/HMI_DB\.(?:HMI_Faceplates|Faceplates)\[(\d+)\]/i)
   return match ? `${deviceName}_HMI${match[1]}` : '未分组'
 }
 
-function statusOf(snapshot: TagSnapshot | undefined, deviceStatus: string | undefined): RuntimeStatus {
-  const device = (deviceStatus ?? '').toLowerCase()
-  if (device !== '' && device !== 'connected') return { label: '异常', className: 'fault' }
+function isLocalVariableGroup(groupKey: string | null | undefined) {
+  return (groupKey ?? '').trim().toLowerCase() === 'local variable'
+}
+
+function isLocalVariableTag(tag: TagDefinition) {
+  return isLocalVariableGroup(tag.groupKey)
+}
+
+function statusOf(tag: TagDefinition, snapshot: TagSnapshot | undefined, deviceStatus: string | undefined): RuntimeStatus {
   if (!snapshot) return { label: '异常', className: 'fault' }
+
   const q = (snapshot.quality ?? '').toLowerCase()
   const s = (snapshot.connectionState ?? '').toLowerCase()
-  const ok = (s === '' || s === 'connected') && (q === '' || q === 'good' || q === '0' || q === '00000000' || q === '0000000')
+  const qualityOk = q === '' || q === 'good' || q === '0' || q === '00000000' || q === '0000000'
+
+  if (isLocalVariableTag(tag)) {
+    const ok = qualityOk && (s === '' || s === 'connected' || s === 'localstatic')
+    return ok ? { label: '正常', className: 'normal' } : { label: '异常', className: 'fault' }
+  }
+
+  const device = (deviceStatus ?? '').toLowerCase()
+  if (device !== '' && device !== 'connected') return { label: '异常', className: 'fault' }
+  const ok = (s === '' || s === 'connected') && qualityOk
   return ok ? { label: '正常', className: 'normal' } : { label: '异常', className: 'fault' }
 }
 
@@ -98,12 +116,12 @@ function resolveDeviceConnectionDisplay(rawStatus: string | undefined, hasBadSna
   return { label: rawStatus || 'Unknown', className: 'fault', detail: '连接状态未知' }
 }
 
-function isHealthySnapshot(snapshot: TagSnapshot | undefined, deviceStatus?: string) {
-  return statusOf(snapshot, deviceStatus).className === 'normal'
+function isHealthySnapshot(tag: TagDefinition, snapshot: TagSnapshot | undefined, deviceStatus?: string) {
+  return statusOf(tag, snapshot, deviceStatus).className === 'normal'
 }
 
 function formatValue(tag: TagDefinition, snapshot: TagSnapshot | undefined, deviceStatus?: string) {
-  if (!isHealthySnapshot(snapshot, deviceStatus)) return '-'
+  if (!isHealthySnapshot(tag, snapshot, deviceStatus)) return '-'
   if (snapshot?.value === null || snapshot?.value === undefined || snapshot?.value === '') return '-'
   if (typeof snapshot.value === 'number' && /float|single|double/i.test(tag.dataType)) return snapshot.value.toFixed(2)
   if (typeof snapshot.value === 'boolean') return snapshot.value ? 'True' : 'False'
@@ -331,10 +349,33 @@ function DashboardDualProgressRing({ percent, positive, negative }: { percent: n
   )
 }
 
+function resolveRecipeRule(nodeId: string) {
+  const displayName = getDisplayName(nodeId).trim()
+  const match = displayName.match(/^Recipe_DB\.(?:DJRecipe|QYJRecipe|QYIRecipe)(?:\[(\d+)\]|(\d+))?(?:\.|$)/i)
+  if (!match) return null
+  const recipeIndex = Number(match[1] ?? match[2] ?? '1') === 2 ? 2 : 1
+  return {
+    groupKey: `Device1_Recipe${recipeIndex}`,
+    intervalMs: 1000,
+  }
+}
+
 function draftFromBrowse(deviceId: string, deviceName: string, node: BrowseNode): TagFormState {
   const displayName = getDisplayName(node.nodeId)
   const match = displayName.match(/HMI_DB\.(?:HMI_Faceplates|Faceplates)\[(\d+)\]/i)
-  return { deviceId, nodeId: node.nodeId, browseName: node.browseName || node.displayName, displayName, dataType: node.dataType ?? 'Unknown', samplingIntervalMs: 200, publishingIntervalMs: 200, allowWrite: node.writable, enabled: true, groupKey: match ? `${deviceName}_HMI${match[1]}` : '未分组' }
+  const recipeRule = resolveRecipeRule(node.nodeId)
+  return {
+    deviceId,
+    nodeId: node.nodeId,
+    browseName: node.browseName || node.displayName,
+    displayName,
+    dataType: node.dataType ?? 'Unknown',
+    samplingIntervalMs: recipeRule?.intervalMs ?? 200,
+    publishingIntervalMs: recipeRule?.intervalMs ?? 200,
+    allowWrite: node.writable,
+    enabled: true,
+    groupKey: recipeRule?.groupKey ?? (match ? `${deviceName}_HMI${match[1]}` : '未分组'),
+  }
 }
 
 function draftFromTag(tag: TagDefinition, deviceName: string): TagFormState {
@@ -478,7 +519,7 @@ function App() {
     }
     const snapshot = tag ? snapshotByTagId.get(tag.id) : undefined
     const deviceStatus = tag ? runtimeDeviceStatusById[tag.deviceId] : undefined
-    const healthy = Boolean(tag) && isHealthySnapshot(snapshot, deviceStatus)
+    const healthy = tag ? isHealthySnapshot(tag, snapshot, deviceStatus) : false
     const numeric = healthy ? toNumericValue(snapshot?.value ?? null) : null
     const emptyText = formatNumberWithUnit(null, inferUnit(name), digitsMap[key])
     return {
@@ -629,7 +670,7 @@ function App() {
     return filteredRuntimeTags.map((tag, index) => {
       const snapshot = snapshotByTagId.get(tag.id)
       const deviceStatus = runtimeDeviceStatusById[tag.deviceId]
-      const stat = statusOf(snapshot, deviceStatus)
+      const stat = statusOf(tag, snapshot, deviceStatus)
       const group = getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag)
       const healthyValue = formatValue(tag, snapshot, deviceStatus)
       return {
@@ -653,10 +694,12 @@ function App() {
       let hasBadSnapshot = false
 
       for (const tag of deviceTags) {
+        if (isLocalVariableTag(tag)) continue
+
         const snapshot = snapshotByTagId.get(tag.id)
         if (!snapshot) continue
         hasSnapshot = true
-        if (statusOf(snapshot, runtimeStatus).className !== 'normal') {
+        if (statusOf(tag, snapshot, runtimeStatus).className !== 'normal') {
           hasBadSnapshot = true
           break
         }
@@ -844,7 +887,23 @@ function App() {
     focusBatchSection()
   }
   function clearBatchDrafts() { setBatchDrafts([]); setStatusMessage('已清空批量配置列表') }
-  function applyBatchDefaults() { setBatchDrafts((current) => current.map((row) => ({ ...row, displayName: row.displayName.trim() || getDisplayName(row.nodeId), groupKey: row.groupKey?.trim() || '未分组', samplingIntervalMs: row.samplingIntervalMs || 200, publishingIntervalMs: row.publishingIntervalMs || 200, enabled: true }))); setStatusMessage('默认规则已应用') }
+  function applyBatchDefaults() {
+    setBatchDrafts((current) => current.map((row) => {
+      const groupKey = row.groupKey?.trim() || '未分组'
+      const isLocal = isLocalVariableGroup(groupKey)
+      const recipeRule = resolveRecipeRule(row.nodeId)
+      return {
+        ...row,
+        displayName: row.displayName.trim() || getDisplayName(row.nodeId) || 'Local Variable',
+        groupKey: isLocal ? 'Local Variable' : (recipeRule?.groupKey || groupKey),
+        nodeId: isLocal ? (row.nodeId.startsWith('local://') ? row.nodeId : '') : row.nodeId,
+        samplingIntervalMs: isLocal ? 0 : (recipeRule?.intervalMs || row.samplingIntervalMs || 200),
+        publishingIntervalMs: isLocal ? 0 : (recipeRule?.intervalMs || row.publishingIntervalMs || 200),
+        enabled: true,
+      }
+    }))
+    setStatusMessage('默认规则已应用')
+  }
   function updateBatchRow(index: number, patch: Partial<TagFormState>) { setBatchDrafts((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row))) }
 
   async function saveBatch() {
@@ -852,7 +911,19 @@ function App() {
     try {
       setSavingBatch(true)
       for (const row of batchRows) {
-        const payload: TagFormState = { ...row, displayName: row.displayName.trim() || getDisplayName(row.nodeId), groupKey: row.groupKey?.trim() || '未分组', samplingIntervalMs: Number(row.samplingIntervalMs) || 200, publishingIntervalMs: Number(row.publishingIntervalMs) || 200, allowWrite: Boolean(row.allowWrite), enabled: Boolean(row.enabled) }
+        const groupKey = row.groupKey?.trim() || '未分组'
+        const isLocal = isLocalVariableGroup(groupKey)
+        const recipeRule = resolveRecipeRule(row.nodeId)
+        const payload: TagFormState = {
+          ...row,
+          nodeId: isLocal ? (row.nodeId.startsWith('local://') ? row.nodeId : '') : row.nodeId,
+          displayName: row.displayName.trim() || getDisplayName(row.nodeId) || 'Local Variable',
+          groupKey: isLocal ? 'Local Variable' : (recipeRule?.groupKey || groupKey),
+          samplingIntervalMs: isLocal ? 0 : (recipeRule?.intervalMs || Number(row.samplingIntervalMs) || 200),
+          publishingIntervalMs: isLocal ? 0 : (recipeRule?.intervalMs || Number(row.publishingIntervalMs) || 200),
+          allowWrite: Boolean(row.allowWrite),
+          enabled: Boolean(row.enabled),
+        }
         if (row.id) await updateTag(row.id, payload); else await createTag(payload)
       }
       await loadWorkspace(); await refreshRuntime(); setBatchDrafts([]); setSelectedBrowseNodes([]); setStatusMessage('批量保存成功，列表已清空')
@@ -1042,6 +1113,8 @@ function App() {
                 <col style={{ width: '136px' }} />
                 <col />
                 <col style={{ width: '132px' }} />
+                <col style={{ width: '96px' }} />
+                <col style={{ width: '96px' }} />
               </colgroup>
               <thead>
                 <tr>
@@ -1061,6 +1134,8 @@ function App() {
                   </th>
                   <th>NodeId</th>
                   <th>写入</th>
+                  <th>订阅周期</th>
+                  <th>发布周期</th>
                 </tr>
               </thead>
               <tbody>
@@ -1085,7 +1160,7 @@ function App() {
                       <td>
                         <span className="project-pill">{group}</span>
                       </td>
-                      <td className="subtle">{tag.nodeId}</td>
+                      <td className="subtle">{isLocalVariableTag(tag) ? '-' : (tag.nodeId || '-')}</td>
                       <td>
                         {tag.allowWrite ? (
                           <div className="write-cell">
@@ -1102,6 +1177,8 @@ function App() {
                           <span className="subtle">只读</span>
                         )}
                       </td>
+                      <td>{Math.round(tag.samplingIntervalMs)} ms</td>
+                      <td>{Math.round(tag.publishingIntervalMs)} ms</td>
                     </tr>
                   )
                 })}
@@ -1459,7 +1536,7 @@ function App() {
                           <td><input type="number" value={row.publishingIntervalMs} onChange={(e) => updateBatchRow(index, { publishingIntervalMs: Number(e.target.value) || 200 })} /></td>
                           <td><input type="checkbox" checked={row.allowWrite} onChange={(e) => updateBatchRow(index, { allowWrite: e.target.checked })} /></td>
                           <td><input type="checkbox" checked={row.enabled} onChange={(e) => updateBatchRow(index, { enabled: e.target.checked })} /></td>
-                          <td className="subtle">{row.nodeId}</td>
+                          <td className="subtle">{isLocalVariableGroup(row.groupKey) ? '-' : (row.nodeId || '-')}</td>
                           <td><button type="button" className="mini-button danger" onClick={() => void deleteBatchRow(row, index)}>删除</button></td>
                         </tr>
                       ))}
@@ -1506,7 +1583,7 @@ function App() {
                       <tr key={tag.id} className="list-row">
                         <td>
                           <strong>{tag.displayName}</strong>
-                          <div className="node-meta">{tag.nodeId}</div>
+                          <div className="node-meta">{isLocalVariableTag(tag) ? '-' : (tag.nodeId || '-')}</div>
                         </td>
                         <td>{getResolvedGroup(activeDeviceName, tag)}</td>
                         <td>{tag.allowWrite ? '可写' : '只读'}</td>

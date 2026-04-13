@@ -64,6 +64,8 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
 
     public async Task ConnectAsync(DeviceConnectionEntity device, IReadOnlyCollection<TagDefinitionEntity> tags, CancellationToken cancellationToken)
     {
+        EnsureLocalSnapshots(tags);
+
         if (_contexts.TryGetValue(device.Id, out var existingContext) &&
             existingContext.Client.State is OpcUaConnectionState.Connected or OpcUaConnectionState.Connecting or OpcUaConnectionState.Reconnecting)
         {
@@ -132,6 +134,8 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
 
     public async Task RefreshSubscriptionsAsync(DeviceConnectionEntity device, IReadOnlyCollection<TagDefinitionEntity> tags, CancellationToken cancellationToken)
     {
+        EnsureLocalSnapshots(tags);
+
         if (!_contexts.TryGetValue(device.Id, out var context))
         {
             return;
@@ -142,6 +146,33 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
 
     public async Task<OpcUaWriteResult> WriteAsync(DeviceConnectionEntity device, TagDefinitionEntity tag, JsonElement value, CancellationToken cancellationToken)
     {
+        if (IsLocalStaticTag(tag))
+        {
+            var now = DateTimeOffset.UtcNow;
+            object? localValue;
+            try
+            {
+                localValue = JsonSerializer.Deserialize<object>(value.GetRawText());
+            }
+            catch
+            {
+                localValue = value.GetRawText();
+            }
+
+            var snapshot = new TagSnapshotDto(
+                tag.Id,
+                device.Id,
+                localValue,
+                "Good",
+                now,
+                now,
+                "LocalStatic");
+
+            _snapshotCache.Upsert(snapshot);
+            _ = _realtimeNotifier.PublishSnapshotAsync(snapshot, CancellationToken.None);
+            return new OpcUaWriteResult(tag.Id, true, "Good", null);
+        }
+
         var context = await EnsureContextAsync(device, cancellationToken);
         return await context.Client.WriteAsync(new OpcUaWriteRequest(tag.Id, tag.NodeId, tag.DataType, value), cancellationToken);
     }
@@ -157,6 +188,7 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
             .ToListAsync(cancellationToken);
 
         var tags = devices.SelectMany(item => item.Tags).OrderBy(item => item.DisplayName).ToArray();
+        EnsureLocalSnapshots(tags);
         var snapshots = _snapshotCache.GetAll();
 
         return new RuntimeOverviewDto(
@@ -191,7 +223,7 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
 
     private static IReadOnlyCollection<OpcUaSubscriptionDefinition> ToSubscriptions(IEnumerable<TagDefinitionEntity> tags)
     {
-        return tags.Where(item => item.Enabled)
+        return tags.Where(item => item.Enabled && !IsLocalStaticTag(item))
             .Select(item => new OpcUaSubscriptionDefinition(
                 item.Id,
                 item.NodeId,
@@ -200,6 +232,60 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
                 item.SamplingIntervalMs,
                 item.PublishingIntervalMs))
             .ToArray();
+    }
+
+    private void EnsureLocalSnapshots(IEnumerable<TagDefinitionEntity> tags)
+    {
+        foreach (var tag in tags)
+        {
+            EnsureLocalSnapshot(tag);
+        }
+    }
+
+    private void EnsureLocalSnapshot(TagDefinitionEntity tag)
+    {
+        if (!IsLocalStaticTag(tag) || _snapshotCache.Get(tag.Id) is not null)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        _snapshotCache.Upsert(new TagSnapshotDto(
+            tag.Id,
+            tag.DeviceId,
+            BuildLocalDefaultValue(tag.DataType),
+            "Good",
+            now,
+            now,
+            "LocalStatic"));
+    }
+
+    private static object? BuildLocalDefaultValue(string? dataType)
+    {
+        var normalized = dataType?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        if (normalized.Contains("bool"))
+        {
+            return false;
+        }
+
+        if (normalized.Contains("float") || normalized.Contains("double") || normalized.Contains("single") || normalized.Contains("decimal"))
+        {
+            return 0d;
+        }
+
+        if (normalized.Contains("byte") || normalized.Contains("int") || normalized.Contains("uint") || normalized.Contains("long") || normalized.Contains("short"))
+        {
+            return 0;
+        }
+
+        return "0";
+    }
+
+    private static bool IsLocalStaticTag(TagDefinitionEntity tag)
+    {
+        return !string.IsNullOrWhiteSpace(tag.GroupKey) &&
+               tag.GroupKey.Trim().Equals("Local Variable", StringComparison.OrdinalIgnoreCase);
     }
 
     private static OpcUaConnectionOptions ToConnectionOptions(DeviceConnectionEntity device)
