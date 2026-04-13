@@ -20,6 +20,9 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
     private OpcUaConnectionOptions? _options;
     private Session? _session;
     private SessionReconnectHandler? _reconnectHandler;
+    private Task? _backgroundReconnectTask;
+    private CancellationTokenSource? _pollingCancellation;
+    private Task? _pollingTask;
     private bool _disposed;
 
     public OpcUaSessionClient(ILogger<OpcUaSessionClient> logger)
@@ -54,6 +57,8 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
         {
             _reconnectHandler?.Dispose();
             _reconnectHandler = null;
+            _backgroundReconnectTask = null;
+            StopPollingLoop();
 
             foreach (var subscription in _subscriptions.Values)
             {
@@ -112,16 +117,22 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
             var variableNode = childNodeId is not null && reference.NodeClass == NodeClass.Variable
                 ? _session.ReadNode(childNodeId) as VariableNode
                 : null;
+            var builtInType = variableNode is not null
+                ? TypeInfo.GetBuiltInType(variableNode.DataType, _session.TypeTree)
+                : BuiltInType.Null;
 
             var dataType = variableNode is not null
-                ? FormatVariableDataType(variableNode)
+                ? FormatVariableDataType(variableNode, builtInType)
                 : null;
 
             var writable = variableNode is not null &&
                            (variableNode.UserAccessLevel & AccessLevels.CurrentWrite) == AccessLevels.CurrentWrite;
 
-            var hasChildren = childNodeId is not null &&
-                              (reference.NodeClass == NodeClass.Object || HasHierarchicalChildren(childNodeId));
+            var hasChildren = reference.NodeClass == NodeClass.Object ||
+                              (childNodeId is not null &&
+                               variableNode is not null &&
+                               ShouldProbeVariableChildren(variableNode, builtInType) &&
+                               HasHierarchicalChildren(childNodeId));
 
             nodes.Add(new OpcUaBrowseNode(
                 childNodeId?.ToString() ?? reference.NodeId.ToString(),
@@ -214,6 +225,13 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
                     SamplingInterval = (int)Math.Max(100, definition.SamplingIntervalMs),
                     QueueSize = 1,
                     DiscardOldest = true,
+                    MonitoringMode = MonitoringMode.Reporting,
+                    Filter = new DataChangeFilter
+                    {
+                        Trigger = DataChangeTrigger.StatusValueTimestamp,
+                        DeadbandType = (uint)DeadbandType.None,
+                        DeadbandValue = 0
+                    },
                     Handle = definition
                 };
 
@@ -297,36 +315,49 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
 
         UpdateState(OpcUaConnectionState.Connecting, $"Connecting to {_options.EndpointUrl}.");
 
-        _configuration ??= await CreateConfigurationAsync(cancellationToken);
+        try
+        {
+            _configuration ??= await CreateConfigurationAsync(cancellationToken);
 
-        var endpoint = await CoreClientUtils.SelectEndpointAsync(
-            _configuration,
-            _options.EndpointUrl,
-            UseSecurity(_options),
-            15000,
-            cancellationToken);
+            var endpoint = await CoreClientUtils.SelectEndpointAsync(
+                _configuration,
+                _options.EndpointUrl,
+                UseSecurity(_options),
+                15000,
+                cancellationToken);
 
-        endpoint.SecurityMode = ParseSecurityMode(_options.SecurityMode);
-        endpoint.SecurityPolicyUri = ParseSecurityPolicy(_options.SecurityPolicy);
+            endpoint.SecurityMode = ParseSecurityMode(_options.SecurityMode);
+            endpoint.SecurityPolicyUri = ParseSecurityPolicy(_options.SecurityPolicy);
 
-        var configuredEndpoint = new ConfiguredEndpoint(null, endpoint, EndpointConfiguration.Create(_configuration));
-        var session = await Session.Create(
-            _configuration,
-            configuredEndpoint,
-            false,
-            false,
-            _options.DeviceName,
-            60_000,
-            CreateUserIdentity(_options),
-            null,
-            cancellationToken);
+            var configuredEndpoint = new ConfiguredEndpoint(null, endpoint, EndpointConfiguration.Create(_configuration));
+            var session = await Session.Create(
+                _configuration,
+                configuredEndpoint,
+                false,
+                false,
+                _options.DeviceName,
+                60_000,
+                CreateUserIdentity(_options),
+                null,
+                cancellationToken);
 
-        session.KeepAlive += SessionOnKeepAlive;
+            session.KeepAlive += SessionOnKeepAlive;
 
-        _session?.Dispose();
-        _session = session;
+            _session?.Dispose();
+            _session = session;
+            EnsurePollingLoop();
 
-        UpdateState(OpcUaConnectionState.Connected, $"Connected to {_options.EndpointUrl}.");
+            UpdateState(OpcUaConnectionState.Connected, $"Connected to {_options.EndpointUrl}.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            UpdateState(OpcUaConnectionState.Faulted, $"Connect failed: {exception.Message}");
+            throw;
+        }
     }
 
     private async Task<ApplicationConfiguration> CreateConfigurationAsync(CancellationToken cancellationToken)
@@ -446,6 +477,7 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
         UpdateState(OpcUaConnectionState.Reconnecting, $"Connection degraded: {eventArgs.Status}.");
         _reconnectHandler = new SessionReconnectHandler(true, 10_000);
         _reconnectHandler.BeginReconnect(session, 10_000, ClientReconnected);
+        EnsureBackgroundReconnectLoop();
     }
 
     private async void ClientReconnected(object? sender, EventArgs eventArgs)
@@ -470,7 +502,154 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
         catch (Exception exception)
         {
             _logger.LogError(exception, "Failed to reapply OPC UA subscriptions after reconnect.");
+            _reconnectHandler?.Dispose();
+            _reconnectHandler = null;
             UpdateState(OpcUaConnectionState.Faulted, exception.Message);
+            EnsureBackgroundReconnectLoop();
+        }
+    }
+
+    private void EnsureBackgroundReconnectLoop()
+    {
+        if (_disposed || _backgroundReconnectTask is { IsCompleted: false })
+        {
+            return;
+        }
+
+        _backgroundReconnectTask = Task.Run(BackgroundReconnectLoopAsync);
+    }
+
+    private void EnsurePollingLoop()
+    {
+        if (_disposed || _pollingTask is { IsCompleted: false })
+        {
+            return;
+        }
+
+        _pollingCancellation = new CancellationTokenSource();
+        _pollingTask = Task.Run(() => PollingLoopAsync(_pollingCancellation.Token));
+    }
+
+    private void StopPollingLoop()
+    {
+        try
+        {
+            _pollingCancellation?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Ignore
+        }
+
+        _pollingCancellation?.Dispose();
+        _pollingCancellation = null;
+        _pollingTask = null;
+    }
+
+    private async Task PollingLoopAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested && !_disposed)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+
+                if (_session is not { Connected: true } session || _options is null)
+                {
+                    continue;
+                }
+
+                var definitions = _subscriptionDefinitions.Values.ToArray();
+                foreach (var definition in definitions)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    DataValue value;
+                    try
+                    {
+                        value = session.ReadValue(NodeId.Parse(definition.NodeId));
+                    }
+                    catch (Exception readException)
+                    {
+                        _logger.LogDebug(readException, "Polling read failed for {NodeId}.", definition.NodeId);
+                        continue;
+                    }
+
+                    var observedAt = DateTimeOffset.UtcNow;
+                    ValueChanged?.Invoke(this, new OpcUaValueChange(
+                        _options.DeviceId,
+                        definition.TagId,
+                        value.Value,
+                        value.StatusCode.ToString(),
+                        observedAt,
+                        observedAt));
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception exception)
+            {
+                _logger.LogDebug(exception, "Background polling loop failed.");
+            }
+        }
+    }
+
+    private async Task BackgroundReconnectLoopAsync()
+    {
+        while (!_disposed)
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5)).ConfigureAwait(false);
+
+                if (_disposed || _options is null)
+                {
+                    return;
+                }
+
+                await _gate.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    if (_disposed || State is OpcUaConnectionState.Connected or OpcUaConnectionState.Disconnected)
+                    {
+                        return;
+                    }
+
+                    _reconnectHandler?.Dispose();
+                    _reconnectHandler = null;
+
+                    if (_session is not null)
+                    {
+                        try
+                        {
+                            _session.KeepAlive -= SessionOnKeepAlive;
+                            _session.Dispose();
+                        }
+                        catch (Exception disposeException)
+                        {
+                            _logger.LogDebug(disposeException, "Ignored OPC UA session dispose failure during reconnect recovery.");
+                        }
+
+                        _session = null;
+                    }
+
+                    await EnsureConnectedCoreAsync(CancellationToken.None).ConfigureAwait(false);
+                    await ApplySubscriptionsAsync(_subscriptionDefinitions.Values.ToArray(), CancellationToken.None).ConfigureAwait(false);
+                    UpdateState(OpcUaConnectionState.Connected, "Session reconnected.");
+                    return;
+                }
+                finally
+                {
+                    _gate.Release();
+                }
+            }
+            catch (Exception exception)
+            {
+                _logger.LogWarning(exception, "Background OPC UA reconnect attempt failed.");
+                UpdateState(OpcUaConnectionState.Reconnecting, "Retrying OPC UA connection.");
+            }
         }
     }
 
@@ -528,9 +707,18 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
         }
     }
 
-    private string FormatVariableDataType(VariableNode variableNode)
+    private static bool ShouldProbeVariableChildren(VariableNode variableNode, BuiltInType builtInType)
     {
-        var builtInType = TypeInfo.GetBuiltInType(variableNode.DataType, _session!.TypeTree);
+        if (builtInType == BuiltInType.ExtensionObject)
+        {
+            return true;
+        }
+
+        return variableNode.ValueRank >= 0 || variableNode.ArrayDimensions is { Count: > 0 };
+    }
+
+    private string FormatVariableDataType(VariableNode variableNode, BuiltInType builtInType)
+    {
         var coreTypeName = builtInType == BuiltInType.ExtensionObject
             ? ReadDataTypeDisplayName(variableNode.DataType) ?? "ExtensionObject"
             : builtInType.ToString();

@@ -1,9 +1,9 @@
 :root {
-  font-family: "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-family: "Inter", "HarmonyOS Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
   line-height: 1.5;
   font-weight: 400;
-  color: #172036;
-  background: #f7f8fc;
+  color: #1f2937;
+  background: #f7f9ff;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -19,7 +19,7 @@ body,
 #root {
   margin: 0;
   height: 100%;
-  background: #f7f8fc;
+  background: #f7f9ff;
 }
 
 button {

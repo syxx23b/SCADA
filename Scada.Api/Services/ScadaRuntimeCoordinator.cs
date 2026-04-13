@@ -13,6 +13,8 @@ public interface IScadaRuntimeCoordinator
 {
     TagSnapshotDto? GetSnapshot(Guid tagId);
 
+    bool IsConnectionHealthy(Guid deviceId);
+
     Task ConnectAsync(DeviceConnectionEntity device, IReadOnlyCollection<TagDefinitionEntity> tags, CancellationToken cancellationToken);
 
     Task DisconnectAsync(Guid deviceId, CancellationToken cancellationToken);
@@ -54,8 +56,21 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
         return _snapshotCache.Get(tagId);
     }
 
+    public bool IsConnectionHealthy(Guid deviceId)
+    {
+        return _contexts.TryGetValue(deviceId, out var context) &&
+               context.Client.State is OpcUaConnectionState.Connected or OpcUaConnectionState.Connecting or OpcUaConnectionState.Reconnecting;
+    }
+
     public async Task ConnectAsync(DeviceConnectionEntity device, IReadOnlyCollection<TagDefinitionEntity> tags, CancellationToken cancellationToken)
     {
+        if (_contexts.TryGetValue(device.Id, out var existingContext) &&
+            existingContext.Client.State is OpcUaConnectionState.Connected or OpcUaConnectionState.Connecting or OpcUaConnectionState.Reconnecting)
+        {
+            await existingContext.Client.ApplySubscriptionsAsync(ToSubscriptions(tags), cancellationToken);
+            return;
+        }
+
         if (_contexts.TryRemove(device.Id, out var previousContext))
         {
             previousContext.Client.ValueChanged -= OnValueChanged;
@@ -73,10 +88,16 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
             await client.ApplySubscriptionsAsync(ToSubscriptions(tags), cancellationToken);
             _contexts[device.Id] = new DeviceRuntimeContext(device.Id, device.Name, client);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            await client.DisposeAsync();
+            throw;
+        }
         catch (Exception exception)
         {
             _logger.LogError(exception, "Failed to connect device {DeviceName}.", device.Name);
             await client.DisposeAsync();
+            await PersistDeviceStateAsync(device.Id, DeviceConnectionStatus.Faulted, exception.Message, CancellationToken.None);
             throw;
         }
     }

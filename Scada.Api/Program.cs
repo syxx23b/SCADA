@@ -52,6 +52,16 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 app.MapControllers();
+app.MapGet("/help/manual", () =>
+{
+    var manualPath = "C:\\[松门电器]高压清洗机测试系统操作手册.v2023.pdf";
+    if (!File.Exists(manualPath))
+    {
+        return Results.NotFound(new { message = $"帮助文档不存在: {manualPath}" });
+    }
+
+    return Results.File(manualPath, "application/pdf", enableRangeProcessing: true);
+});
 app.MapHub<RealtimeHub>("/hubs/realtime");
 app.MapFallbackToFile("index.html");
 

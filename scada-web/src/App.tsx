@@ -1,32 +1,34 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+﻿import { useEffect, useMemo, useRef, useState } from 'react'
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
-import type { ReactNode } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, connectDevice, createDevice, createTag, deleteTag, disconnectDevice, getDevices, getRuntimeOverview, getTags, openVncTool, updateDevice, updateTag, writeTag } from './api'
-import type { BrowseNode, DeviceConnection, DeviceFormState, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
+import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, openVncTool, updateTag, writeTag } from './api'
+import type { BrowseNode, DeviceConnection, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
 
-type ViewKey = 'dashboard' | 'runtime' | 'tags' | 'batch' | 'devices'
+type ViewKey = 'dashboard' | 'runtime' | 'tags' | 'help' | 'login'
+type SidebarKey = ViewKey | 'report'
 type RuntimeStatus = { label: '正常' | '异常'; className: 'normal' | 'fault' }
 type HistoryPoint = { ts: number; value: number }
-type DashboardField = { tag?: TagDefinition; snapshot?: TagSnapshot; numeric: number | null; text: string }
+type DashboardField = { tag?: TagDefinition; snapshot?: TagSnapshot; healthy: boolean; numeric: number | null; text: string; emptyText: string }
 type FaceplateTrend = { pressure: HistoryPoint[]; flow: HistoryPoint[] }
+type SidebarItem = { key: SidebarKey; label: string; icon: string }
 
-const sidebarItems: Array<{ key: ViewKey; label: string; icon: string }> = [
+const baseSidebarItems: SidebarItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '◉' },
-  { key: 'runtime', label: '监控', icon: '▲' },
+  { key: 'report', label: 'Report', icon: '◌' },
+  { key: 'help', label: 'Help', icon: '◇' },
+]
+
+const protectedSidebarItems: SidebarItem[] = [
+  { key: 'runtime', label: '标签', icon: '▲' },
   { key: 'tags', label: '订阅', icon: '▣' },
-  { key: 'batch', label: '批量', icon: '⌘' },
-  { key: 'devices', label: '设备', icon: '◫' },
 ]
 const dashboardFaceplateIndexes = [1, 2] as const
 
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
-  return value === 'dashboard' || value === 'runtime' || value === 'tags' || value === 'batch' || value === 'devices' ? value : 'dashboard'
-}
-
-function blankDeviceForm(): DeviceFormState {
-  return { name: '', endpointUrl: '', securityMode: 'None', securityPolicy: 'None', authMode: 'Anonymous', username: '', password: '', autoConnect: true }
+  if (value === 'batch') return 'tags'
+  return value === 'dashboard' || value === 'runtime' || value === 'tags' || value === 'help' || value === 'login' ? value : 'dashboard'
 }
 
 function getDisplayName(nodeId: string) {
@@ -56,8 +58,53 @@ function statusOf(snapshot: TagSnapshot | undefined, deviceStatus: string | unde
   return ok ? { label: '正常', className: 'normal' } : { label: '异常', className: 'fault' }
 }
 
-function formatValue(tag: TagDefinition, snapshot: TagSnapshot | undefined) {
-  if (snapshot?.value === null || snapshot?.value === undefined || snapshot?.value === '') return '暂无数据'
+type DeviceConnectionDisplay = {
+  label: string
+  className: 'normal' | 'warn' | 'fault'
+  detail: string
+}
+
+function resolveDeviceConnectionDisplay(rawStatus: string | undefined, hasBadSnapshot: boolean, hasSnapshot: boolean): DeviceConnectionDisplay {
+  const normalized = (rawStatus ?? '').trim().toLowerCase()
+
+  if (normalized === 'connecting') {
+    return { label: 'Connecting', className: 'warn', detail: '设备正在建立连接' }
+  }
+
+  if (normalized === 'reconnecting') {
+    return { label: 'Reconnecting', className: 'warn', detail: '连接中断后正在自动重连' }
+  }
+
+  if (normalized === 'connected') {
+    if (hasBadSnapshot) {
+      return { label: 'NG', className: 'fault', detail: '连接已建立，但变量质量异常' }
+    }
+
+    if (!hasSnapshot) {
+      return { label: 'Connected', className: 'warn', detail: '连接已建立，等待首包数据' }
+    }
+
+    return { label: 'Connected', className: 'normal', detail: '连接正常' }
+  }
+
+  if (normalized === 'faulted') {
+    return { label: 'NG', className: 'fault', detail: '连接故障，等待自动重连' }
+  }
+
+  if (normalized === 'disconnected') {
+    return { label: 'Disconnected', className: 'fault', detail: '连接已断开' }
+  }
+
+  return { label: rawStatus || 'Unknown', className: 'fault', detail: '连接状态未知' }
+}
+
+function isHealthySnapshot(snapshot: TagSnapshot | undefined, deviceStatus?: string) {
+  return statusOf(snapshot, deviceStatus).className === 'normal'
+}
+
+function formatValue(tag: TagDefinition, snapshot: TagSnapshot | undefined, deviceStatus?: string) {
+  if (!isHealthySnapshot(snapshot, deviceStatus)) return '-'
+  if (snapshot?.value === null || snapshot?.value === undefined || snapshot?.value === '') return '-'
   if (typeof snapshot.value === 'number' && /float|single|double/i.test(tag.dataType)) return snapshot.value.toFixed(2)
   if (typeof snapshot.value === 'boolean') return snapshot.value ? 'True' : 'False'
   return String(snapshot.value)
@@ -201,9 +248,9 @@ function MiniSparkline({
   points: HistoryPoint[]
   color: string
 }) {
+  const [gradientId] = useState(() => `spark-${Math.random().toString(36).slice(2, 10)}`)
   const normalized = normalizeTrend(points)
-  const first = normalized[0]
-  const last = normalized[normalized.length - 1]
+  const hasPoints = normalized.length > 0
   const smoothPath = normalized.length <= 1
     ? normalized.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ')
     : normalized.slice(1).reduce((path, point, index) => {
@@ -212,11 +259,16 @@ function MiniSparkline({
       const cy = ((prev.y + point.y) / 2).toFixed(2)
       return `${path} Q ${prev.x.toFixed(2)} ${prev.y.toFixed(2)}, ${cx} ${cy}`
     }, `M ${normalized[0].x.toFixed(2)} ${normalized[0].y.toFixed(2)}`)
-  const areaPath = first && last ? `${smoothPath} L ${last.x.toFixed(2)} 44 L ${first.x.toFixed(2)} 44 Z` : ''
-
+  const areaPath = hasPoints ? `${smoothPath} L 98 42 L 2 42 Z` : ''
   return (
     <svg className="dashboard-sparkline" viewBox="0 0 100 44" preserveAspectRatio="none" aria-hidden="true">
-      {areaPath ? <path d={areaPath} fill={color} fillOpacity="0.16" /> : null}
+      <defs>
+        <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.18" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {areaPath ? <path d={areaPath} fill={`url(#${gradientId})`} /> : null}
       {smoothPath ? <path d={smoothPath} fill="none" stroke={color} strokeWidth="1.9" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" /> : null}
     </svg>
   )
@@ -297,18 +349,21 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [savingTagId, setSavingTagId] = useState<string | null>(null)
   const [savingBatch, setSavingBatch] = useState(false)
-  const [savingDeviceId, setSavingDeviceId] = useState<string | null>(null)
   const [statusMessage, setStatusMessage] = useState('系统已就绪')
   const [groupFilter, setGroupFilter] = useState('all')
+  const [selectedTagGroupFilter, setSelectedTagGroupFilter] = useState('all')
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loginUsername, setLoginUsername] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
   const [writeDrafts, setWriteDrafts] = useState<Record<string, string>>({})
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [browserSearch, setBrowserSearch] = useState('')
   const [expandedBrowseNodes, setExpandedBrowseNodes] = useState<Record<string, boolean>>({})
   const [browseCache, setBrowseCache] = useState<Record<string, BrowseNode[]>>({})
+  const [browseLoadingKeys, setBrowseLoadingKeys] = useState<Record<string, boolean>>({})
   const [selectedBrowseNodes, setSelectedBrowseNodes] = useState<BrowseNode[]>([])
   const [batchDrafts, setBatchDrafts] = useState<TagFormState[]>([])
-  const [deviceForm, setDeviceForm] = useState<DeviceFormState>(blankDeviceForm())
-  const [editingDeviceId, setEditingDeviceId] = useState<string | null>(null)
+  const batchSectionRef = useRef<HTMLElement | null>(null)
   const [dashboardTrendByFaceplate, setDashboardTrendByFaceplate] = useState<Record<number, FaceplateTrend>>({
     1: { pressure: [], flow: [] },
     2: { pressure: [], flow: [] },
@@ -322,8 +377,20 @@ function App() {
   const activeDeviceName = deviceNameById[activeDeviceId] || runtimeNameById[activeDeviceId] || '当前设备'
   const rootBrowseKey = `${activeDeviceId}|__root__`
   const rootBrowseNodes = browseCache[rootBrowseKey] ?? []
+  const rootBrowseLoading = Boolean(browseLoadingKeys[rootBrowseKey])
+  const hasLoadedRootBrowse = Object.prototype.hasOwnProperty.call(browseCache, rootBrowseKey)
   const selectedDeviceTags = useMemo(() => tagRows.filter((tag) => tag.deviceId === activeDeviceId), [activeDeviceId, tagRows])
-  const batchRows = batchDrafts.length > 0 ? batchDrafts : selectedDeviceTags.map((tag) => draftFromTag(tag, activeDeviceName))
+  const selectedDeviceTagGroups = useMemo(() => {
+    const unique = new Set<string>(['all'])
+    for (const tag of selectedDeviceTags) unique.add(getResolvedGroup(activeDeviceName, tag))
+    return Array.from(unique)
+  }, [activeDeviceName, selectedDeviceTags])
+  const filteredSelectedDeviceTags = useMemo(() => {
+    if (selectedTagGroupFilter === 'all') return selectedDeviceTags
+    return selectedDeviceTags.filter((tag) => getResolvedGroup(activeDeviceName, tag) === selectedTagGroupFilter)
+  }, [activeDeviceName, selectedDeviceTags, selectedTagGroupFilter])
+  const batchRows = batchDrafts
+  const sidebarItems = useMemo(() => (isAuthenticated ? [...baseSidebarItems, ...protectedSidebarItems] : baseSidebarItems), [isAuthenticated])
   const groups = useMemo(() => {
     const unique = new Set<string>(['all'])
     for (const tag of runtime.tags) unique.add(getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag))
@@ -410,12 +477,17 @@ function App() {
       power: 0,
     }
     const snapshot = tag ? snapshotByTagId.get(tag.id) : undefined
-    const numeric = toNumericValue(snapshot?.value ?? null)
+    const deviceStatus = tag ? runtimeDeviceStatusById[tag.deviceId] : undefined
+    const healthy = Boolean(tag) && isHealthySnapshot(snapshot, deviceStatus)
+    const numeric = healthy ? toNumericValue(snapshot?.value ?? null) : null
+    const emptyText = formatNumberWithUnit(null, inferUnit(name), digitsMap[key])
     return {
       tag,
       snapshot,
+      healthy,
       numeric,
-      text: formatNumberWithUnit(numeric, inferUnit(name), digitsMap[key]),
+      text: healthy ? formatNumberWithUnit(numeric, inferUnit(name), digitsMap[key]) : emptyText,
+      emptyText,
     }
   }
 
@@ -436,6 +508,7 @@ function App() {
     const enduranceProcess = dashboardField(faceplateIndex, 'enduranceprocess', /enduranceprocess/)
     const triggerOn = dashboardField(faceplateIndex, 'triggeronprocess', /triggeronprocess/)
     const triggerOff = dashboardField(faceplateIndex, 'triggeroffprocess', /triggeroffprocess/)
+    const triggerCount = dashboardField(faceplateIndex, 'triggercount', /triggercount|trigger_count/)
     const lastTimeHour = dashboardField(faceplateIndex, 'lasttimehour', /lasttimehour/)
     const lastTimeMinute = dashboardField(faceplateIndex, 'lasttimeminute', /lasttimeminute/)
     const stationNumber = dashboardField(faceplateIndex, 'stationnumber', /stationnumber/)
@@ -458,17 +531,14 @@ function App() {
     const showEnduranceCard = Math.round(enduranceMode.numeric ?? 0) > 0
     const enduranceDuration = `${Math.max(0, lastTimeHour.numeric ?? 0)}h ${Math.max(0, lastTimeMinute.numeric ?? 0)}min`
     const faceplateTags = dashboardTagsByFaceplate[faceplateIndex] ?? []
-    const hasConnectedDevice = faceplateTags.some((tag) => {
-      const deviceState = (runtimeDeviceStatusById[tag.deviceId] ?? '').toLowerCase()
-      return (deviceState.includes('connect') || deviceState === '') && !deviceState.includes('dis')
-    })
+    const hasConnectedDevice = faceplateTags.some((tag) => (runtimeDeviceStatusById[tag.deviceId] ?? '').toLowerCase() === 'connected')
     const hasGoodSnapshot = faceplateTags.some((tag) => {
       const snapshot = snapshotByTagId.get(tag.id)
       if (!snapshot) return false
       const q = (snapshot.quality ?? '').toLowerCase()
       const s = (snapshot.connectionState ?? '').toLowerCase()
       const qualityOk = q === '' || q === 'good' || q === '0' || q === '00000000' || q === '0000000'
-      const stateOk = s === '' || s.includes('connect')
+      const stateOk = s === '' || s === 'connected'
       return qualityOk && stateOk
     })
     const faceplateDeviceStatuses = Array.from(
@@ -477,7 +547,7 @@ function App() {
     const hasDeviceDisconnecting = faceplateDeviceStatuses.some((status) =>
       status.includes('reconnect') || status.includes('disconnect') || status.includes('offline') || status.includes('fault') || status.includes('error'),
     )
-    const connected = !hasDeviceDisconnecting && (hasConnectedDevice || hasGoodSnapshot)
+    const connected = hasConnectedDevice && !hasDeviceDisconnecting && hasGoodSnapshot
     const boardHeadClass =
       !connected
         ? 'disconnected'
@@ -486,46 +556,55 @@ function App() {
           : (workFlow.numeric ?? 0) > 0
             ? 'connected'
             : 'standby'
+    const noDataText = '-'
+    const maskField = (field: DashboardField): DashboardField =>
+      connected ? field : { ...field, healthy: false, numeric: null, text: field.emptyText }
+    const safeStatus = connected ? status : { text: noDataText, className: 'fault' as const }
 
     return {
       faceplateIndex,
       available: (dashboardTagsByFaceplate[faceplateIndex] ?? []).length > 0,
       title: stationNumber.numeric !== null ? `工位${stationNumber.numeric}` : `工位${faceplateIndex}`,
       stationText:
-        barcode.snapshot?.value === null || barcode.snapshot?.value === undefined
-          ? '-'
-          : String(barcode.snapshot.value).trim() || '-',
+        connected
+          ? (
+              barcode.snapshot?.value === null || barcode.snapshot?.value === undefined
+                ? '-'
+                : String(barcode.snapshot.value).trim() || '-'
+            )
+          : noDataText,
       deviceStatus: connected ? `Connected / ${status.text}` : 'Disconnected',
       boardHeadClass,
-      risk: { label: status.className === 'normal' ? '正常' : '异常', className: status.className },
-      statusText: status.text,
-      workflowText,
+      risk: { label: safeStatus.className === 'normal' ? '正常' : '异常', className: safeStatus.className },
+      statusText: safeStatus.text,
+      workflowText: connected ? workflowText : noDataText,
       workflowClass,
-      pressure,
-      flow,
-      inletPressure,
-      inletTemp,
-      voltage,
-      current,
-      frequency,
-      power,
-      passNumber,
-      failNumber,
-      errCode,
-      enduranceProcess,
-      triggerOn,
-      triggerOff,
-      pressureSeries,
-      flowSeries,
-      endurancePercent,
-      passPercent,
-      failPercent,
-      showEnduranceCard,
-      enduranceDuration,
-      triggerOnPercent,
-      triggerOffPercent,
-      passCountText: formatCount(passNumber.numeric),
-      failCountText: formatCount(failNumber.numeric),
+      pressure: maskField(pressure),
+      flow: maskField(flow),
+      inletPressure: maskField(inletPressure),
+      inletTemp: maskField(inletTemp),
+      voltage: maskField(voltage),
+      current: maskField(current),
+      frequency: maskField(frequency),
+      power: maskField(power),
+      passNumber: maskField(passNumber),
+      failNumber: maskField(failNumber),
+      errCode: maskField(errCode),
+      enduranceProcess: maskField(enduranceProcess),
+      triggerOn: maskField(triggerOn),
+      triggerOff: maskField(triggerOff),
+      triggerCount: maskField(triggerCount),
+      pressureSeries: connected ? pressureSeries : [],
+      flowSeries: connected ? flowSeries : [],
+      endurancePercent: connected ? endurancePercent : 0,
+      passPercent: connected ? passPercent : 0,
+      failPercent: connected ? failPercent : 0,
+      showEnduranceCard: connected ? showEnduranceCard : false,
+      enduranceDuration: connected ? enduranceDuration : noDataText,
+      triggerOnPercent: connected ? triggerOnPercent : 0,
+      triggerOffPercent: connected ? triggerOffPercent : 0,
+      passCountText: connected ? formatCount(passNumber.numeric) : noDataText,
+      failCountText: connected ? formatCount(failNumber.numeric) : noDataText,
     }
   })
   }, [dashboardFaceplateIndexes, dashboardTagsByFaceplate, dashboardTrendByFaceplate, runtimeDeviceStatusById, snapshotByTagId])
@@ -549,20 +628,58 @@ function App() {
   const runtimeRows = useMemo(() => {
     return filteredRuntimeTags.map((tag, index) => {
       const snapshot = snapshotByTagId.get(tag.id)
-      const stat = statusOf(snapshot, runtimeDeviceStatusById[tag.deviceId])
+      const deviceStatus = runtimeDeviceStatusById[tag.deviceId]
+      const stat = statusOf(snapshot, deviceStatus)
       const group = getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag)
-      const value = formatValue(tag, snapshot)
+      const healthyValue = formatValue(tag, snapshot, deviceStatus)
       return {
         risk: index + 1,
         tag,
         snapshot,
         stat,
         group,
-        value,
+        healthyValue,
         time: compactTimeText(snapshot),
       }
     })
   }, [filteredRuntimeTags, runtimeDeviceStatusById, runtimeNameById, snapshotByTagId])
+
+  const deviceStatusCards = useMemo(() => {
+    return runtime.devices.map((runtimeDevice) => {
+      const device = devices.find((d) => d.id === runtimeDevice.deviceId)
+      const runtimeStatus = runtimeDevice.status
+      const deviceTags = runtime.tags.filter((tag) => tag.deviceId === runtimeDevice.deviceId)
+      let hasSnapshot = false
+      let hasBadSnapshot = false
+
+      for (const tag of deviceTags) {
+        const snapshot = snapshotByTagId.get(tag.id)
+        if (!snapshot) continue
+        hasSnapshot = true
+        if (statusOf(snapshot, runtimeStatus).className !== 'normal') {
+          hasBadSnapshot = true
+          break
+        }
+      }
+
+      const display = resolveDeviceConnectionDisplay(runtimeStatus, hasBadSnapshot, hasSnapshot)
+      return {
+        id: runtimeDevice.deviceId,
+        name: runtimeDevice.deviceName,
+        endpointUrl: device?.endpointUrl ?? runtimeDevice.endpointUrl,
+        autoConnect: device?.autoConnect ?? false,
+        updatedAt: device?.updatedAt,
+        statusLabel: display.label,
+        statusClassName: display.className,
+        statusDetail: display.detail,
+      }
+    })
+  }, [devices, runtime.devices, runtime.tags, runtimeDeviceStatusById, snapshotByTagId])
+
+  const onlineDeviceCount = useMemo(
+    () => deviceStatusCards.filter((item) => item.statusClassName === 'normal').length,
+    [deviceStatusCards],
+  )
 
   async function openVnc(faceplateIndex: number) {
     const hostByFaceplate: Record<number, string> = {
@@ -608,17 +725,30 @@ function App() {
     }
   }
 
-  async function loadBrowse(deviceId: string, nodeId: string | null) {
+  async function loadBrowse(deviceId: string, nodeId: string | null, force = false) {
     if (!deviceId) return
     const key = `${deviceId}|${nodeId ?? '__root__'}`
-    if (browseCache[key]) return
+    if (!force && (browseLoadingKeys[key] || Object.prototype.hasOwnProperty.call(browseCache, key))) return
+
     try {
-      setBrowseCache((current) => ({ ...current, [key]: [] }))
-      setBrowseCache((current) => ({ ...current, [key]: [] }))
+      setBrowseLoadingKeys((current) => ({ ...current, [key]: true }))
       const nodes = await browseDevice(deviceId, nodeId ?? undefined)
       setBrowseCache((current) => ({ ...current, [key]: nodes }))
     } catch (error) {
+      setBrowseCache((current) => {
+        if (!Object.prototype.hasOwnProperty.call(current, key)) return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
       setStatusMessage(error instanceof Error ? error.message : '浏览目录失败')
+    } finally {
+      setBrowseLoadingKeys((current) => {
+        if (!current[key]) return current
+        const next = { ...current }
+        delete next[key]
+        return next
+      })
     }
   }
 
@@ -638,13 +768,26 @@ function App() {
   }, [])
 
   useEffect(() => { if (!selectedDeviceId && activeDeviceId) setSelectedDeviceId(activeDeviceId) }, [activeDeviceId, selectedDeviceId])
+  useEffect(() => { setSelectedTagGroupFilter('all') }, [activeDeviceId])
+  useEffect(() => {
+    if (!isAuthenticated && (view === 'runtime' || view === 'tags')) {
+      setView('login')
+      setStatusMessage('请先登录后再访问标签与订阅')
+    }
+  }, [isAuthenticated, view])
   useEffect(() => {
     if (!activeDeviceId) return
     setExpandedBrowseNodes({})
     setSelectedBrowseNodes([])
     void loadBrowse(activeDeviceId, null)
   }, [activeDeviceId])
-  useEffect(() => { if (view !== 'batch' || batchDrafts.length > 0 || !activeDeviceId) return; const drafts = selectedDeviceTags.map((tag) => draftFromTag(tag, activeDeviceName)); if (drafts.length) setBatchDrafts(drafts) }, [activeDeviceId, activeDeviceName, batchDrafts.length, selectedDeviceTags, view])
+
+  function focusBatchSection() {
+    setView('tags')
+    window.requestAnimationFrame(() => {
+      batchSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+  }
 
   async function handleWrite(tagId: string) {
     const value = writeDrafts[tagId]
@@ -662,42 +805,10 @@ function App() {
     }
   }
 
-  async function handleSaveDevice() {
-    try {
-      setSavingDeviceId(editingDeviceId ?? 'new')
-      const payload: DeviceFormState = { ...deviceForm, authMode: 'Anonymous', username: '', password: '' }
-      if (editingDeviceId) {
-        await updateDevice(editingDeviceId, payload)
-        setStatusMessage('设备已更新')
-      } else {
-        await createDevice(payload)
-        setStatusMessage('设备已创建')
-      }
-      setEditingDeviceId(null)
-      setDeviceForm(blankDeviceForm())
-      await loadWorkspace()
-      await refreshRuntime()
-    } catch (error) {
-      setStatusMessage(error instanceof Error ? error.message : '设备保存失败')
-    } finally {
-      setSavingDeviceId(null)
-    }
-  }
-
-  function editDevice(device: DeviceConnection) {
-    setEditingDeviceId(device.id)
-    setSelectedDeviceId(device.id)
-    setDeviceForm({ name: device.name, endpointUrl: device.endpointUrl, securityMode: device.securityMode || 'None', securityPolicy: device.securityPolicy || 'None', authMode: device.authMode || 'Anonymous', username: device.username ?? '', password: '', autoConnect: device.autoConnect })
-    setView('devices')
-  }
-
-  async function connect(id: string) { try { setSavingDeviceId(id); await connectDevice(id); await loadWorkspace(); await refreshRuntime(); setStatusMessage('连接命令已发送') } catch (error) { setStatusMessage(error instanceof Error ? error.message : '连接失败') } finally { setSavingDeviceId(null) } }
-  async function disconnect(id: string) { try { setSavingDeviceId(id); await disconnectDevice(id); await loadWorkspace(); await refreshRuntime(); setStatusMessage('断开命令已发送') } catch (error) { setStatusMessage(error instanceof Error ? error.message : '断开失败') } finally { setSavingDeviceId(null) } }
-
   function toggleFolder(node: BrowseNode) {
     setExpandedBrowseNodes((current) => {
       const nextExpanded = !current[node.nodeId]
-      void loadBrowse(activeDeviceId, node.nodeId)
+      if (nextExpanded) void loadBrowse(activeDeviceId, node.nodeId)
       return { ...current, [node.nodeId]: nextExpanded }
     })
   }
@@ -724,10 +835,14 @@ function App() {
     })
     setSelectedBrowseNodes([])
     setStatusMessage(`已加入 ${selectedBrowseNodes.length} 个变量到批量配置`)
-    setView('batch')
+    focusBatchSection()
   }
 
-  function loadDeviceTagsToBatch() { setBatchDrafts(selectedDeviceTags.map((tag) => draftFromTag(tag, activeDeviceName))); setStatusMessage(`已载入 ${selectedDeviceTags.length} 个已订阅变量`) }
+  function loadDeviceTagsToBatch() {
+    setBatchDrafts(selectedDeviceTags.map((tag) => draftFromTag(tag, activeDeviceName)))
+    setStatusMessage(`已载入 ${selectedDeviceTags.length} 个已订阅变量`)
+    focusBatchSection()
+  }
   function clearBatchDrafts() { setBatchDrafts([]); setStatusMessage('已清空批量配置列表') }
   function applyBatchDefaults() { setBatchDrafts((current) => current.map((row) => ({ ...row, displayName: row.displayName.trim() || getDisplayName(row.nodeId), groupKey: row.groupKey?.trim() || '未分组', samplingIntervalMs: row.samplingIntervalMs || 200, publishingIntervalMs: row.publishingIntervalMs || 200, enabled: true }))); setStatusMessage('默认规则已应用') }
   function updateBatchRow(index: number, patch: Partial<TagFormState>) { setBatchDrafts((current) => current.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row))) }
@@ -740,7 +855,7 @@ function App() {
         const payload: TagFormState = { ...row, displayName: row.displayName.trim() || getDisplayName(row.nodeId), groupKey: row.groupKey?.trim() || '未分组', samplingIntervalMs: Number(row.samplingIntervalMs) || 200, publishingIntervalMs: Number(row.publishingIntervalMs) || 200, allowWrite: Boolean(row.allowWrite), enabled: Boolean(row.enabled) }
         if (row.id) await updateTag(row.id, payload); else await createTag(payload)
       }
-      await loadWorkspace(); await refreshRuntime(); setBatchDrafts((await getTags()).filter((tag) => tag.deviceId === activeDeviceId).map((tag) => draftFromTag(tag, activeDeviceName))); setStatusMessage('批量保存成功')
+      await loadWorkspace(); await refreshRuntime(); setBatchDrafts([]); setSelectedBrowseNodes([]); setStatusMessage('批量保存成功，列表已清空')
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : '批量保存失败')
     } finally { setSavingBatch(false) }
@@ -756,27 +871,120 @@ function App() {
     }
   }
 
-  function editRuntimeTag(tag: TagDefinition) { const deviceName = runtimeNameById[tag.deviceId] || activeDeviceName; setSelectedDeviceId(tag.deviceId); setBatchDrafts([draftFromTag(tag, deviceName)]); setView('batch') }
+  function editRuntimeTag(tag: TagDefinition) {
+    const deviceName = runtimeNameById[tag.deviceId] || activeDeviceName
+    setSelectedDeviceId(tag.deviceId)
+    setBatchDrafts([draftFromTag(tag, deviceName)])
+    focusBatchSection()
+  }
   async function removeRuntimeTag(id: string) { try { await deleteTag(id); await loadWorkspace(); await refreshRuntime(); setStatusMessage('订阅变量已删除') } catch (error) { setStatusMessage(error instanceof Error ? error.message : '删除失败') } }
+
+  function handleSidebarClick(key: SidebarKey) {
+    if (key === 'report') {
+      const popup = window.open('http://localhost:8080/webroot/decision', '_blank', 'noopener,noreferrer')
+      if (!popup) setStatusMessage('Report 页面被浏览器拦截，请允许弹窗后重试')
+      return
+    }
+
+    if (!isAuthenticated && (key === 'runtime' || key === 'tags')) {
+      setView('login')
+      setStatusMessage('请先登录后再访问标签与订阅')
+      return
+    }
+
+    setView(key)
+  }
+
+  function handleLoginSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (loginUsername === 'ZXC' && loginPassword === '1826') {
+      setIsAuthenticated(true)
+      setLoginPassword('')
+      setView('runtime')
+      setStatusMessage('登录成功，已开放标签与订阅菜单')
+      return
+    }
+
+    setStatusMessage('登录失败：用户名或密码错误')
+  }
+
+  function handleLogout() {
+    setIsAuthenticated(false)
+    setLoginUsername('')
+    setLoginPassword('')
+    setView('login')
+    setStatusMessage('已退出登录')
+  }
+
+  function handleAuthEntryClick() {
+    if (isAuthenticated) {
+      handleLogout()
+      return
+    }
+
+    setView('login')
+    setStatusMessage('请先登录')
+  }
+
+  function renderSidebarButtons(mode: 'default' | 'runtime') {
+    const isRuntime = mode === 'runtime'
+    const hasRuntimeEntry = sidebarItems.some((item) => item.key === 'runtime')
+
+    const rendered = sidebarItems.flatMap((item) => {
+      const itemClass = isRuntime ? (view === item.key ? 'runtime-nav active' : 'runtime-nav') : (view === item.key ? 'nav-item active' : 'nav-item')
+      const iconClass = isRuntime ? 'runtime-nav-icon' : 'nav-icon'
+      const labelClass = isRuntime ? 'runtime-nav-label' : 'nav-label'
+
+      if (item.key === 'runtime') {
+        return [
+          <div key={`sidebar-auth-before-${mode}`}>
+            <div className="sidebar-divider" aria-hidden="true" />
+            <div className="sidebar-auth-inline">
+              <button type="button" className="sidebar-auth-entry" onClick={handleAuthEntryClick}>
+                <span className="sidebar-auth-icon">↪</span>
+                <span className="sidebar-auth-label">{isAuthenticated ? 'Logout' : 'Login'}</span>
+              </button>
+            </div>
+            <button type="button" className={itemClass} onClick={() => handleSidebarClick(item.key)}>
+              <span className={iconClass}>{item.icon}</span>
+              <span className={labelClass}>{item.label}</span>
+            </button>
+          </div>,
+        ]
+      }
+
+      return [
+        <button key={item.key} type="button" className={itemClass} onClick={() => handleSidebarClick(item.key)}>
+          <span className={iconClass}>{item.icon}</span>
+          <span className={labelClass}>{item.label}</span>
+        </button>,
+      ]
+    })
+
+    if (!hasRuntimeEntry) {
+      rendered.push(
+        <div key={`sidebar-auth-tail-${mode}`} className="sidebar-auth-inline">
+          <button type="button" className="sidebar-auth-entry" onClick={handleAuthEntryClick}>
+            <span className="sidebar-auth-icon">↪</span>
+            <span className="sidebar-auth-label">Login</span>
+          </button>
+        </div>,
+      )
+    }
+
+    return rendered
+  }
+
   const runtimePage = (
     <section className="runtime-shell">
       <aside className="runtime-sidebar">
         <div className="runtime-brand">
-          <div className="runtime-brand-mark">SCADA</div>
+          <div className="runtime-brand-mark">清洗机测试系统</div>
         </div>
         <nav className="runtime-sidebar-nav" aria-label="主导航">
-          {sidebarItems.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              className={view === item.key ? 'runtime-nav active' : 'runtime-nav'}
-              onClick={() => setView(item.key)}
-            >
-              <span className="runtime-nav-icon">{item.icon}</span>
-              <span className="runtime-nav-label">{item.label}</span>
-            </button>
-          ))}
+          {renderSidebarButtons('runtime')}
         </nav>
+
       </aside>
 
       <section className="runtime-content">
@@ -790,6 +998,30 @@ function App() {
             <div className="avatar-circle">SC</div>
           </div>
         </header>
+
+        <section className="runtime-device-status-strip" aria-label="设备连接状态总览">
+          <article className="runtime-device-status-card">
+            <header className="runtime-device-status-head">
+              <strong>设备连接状态</strong>
+              <span className="status-line">{onlineDeviceCount}/{deviceStatusCards.length || 0} 正常连接 · 自动更新</span>
+            </header>
+            {deviceStatusCards.length === 0 ? (
+              <div className="empty-note">暂无设备状态数据</div>
+            ) : (
+              <div className="runtime-device-status-list">
+                {deviceStatusCards.map((device) => (
+                  <div key={device.id} className={`runtime-device-status-item ${device.statusClassName}`}>
+                    <div className="runtime-device-status-main">
+                      <span className="runtime-device-name">{device.name}</span>
+                      <span className="node-meta">{device.endpointUrl}</span>
+                    </div>
+                    <span className={`status-pill ${device.statusClassName}`}>{device.statusLabel}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </article>
+        </section>
 
         <section className="runtime-toolbar-row runtime-toolbar-row--compact">
           <div className="runtime-toolbar-meta">
@@ -832,7 +1064,8 @@ function App() {
                 </tr>
               </thead>
               <tbody>
-                {runtimeRows.map(({ risk, tag, stat, group, value, time }) => {
+                {runtimeRows.map(({ risk, tag, stat, group, healthyValue, time }) => {
+                  const displayValue = stat.className === 'normal' ? healthyValue : '暂无数据'
                   return (
                     <tr key={tag.id}>
                       <td className="row-index">{risk}</td>
@@ -840,7 +1073,7 @@ function App() {
                         <div className="project-name">{tag.displayName}</div>
                       </td>
                       <td>
-                        <div className="project-value">{value}</div>
+                        <div className="project-value">{displayValue}</div>
                       </td>
                       <td>
                         <span className={`project-status ${stat.className === 'normal' ? 'green' : 'red'}`}>
@@ -859,7 +1092,7 @@ function App() {
                             <input
                               value={writeDrafts[tag.id] ?? ''}
                               onChange={(e) => setWriteDrafts((current) => ({ ...current, [tag.id]: e.target.value }))}
-                              placeholder={value}
+                              placeholder={displayValue}
                             />
                             <button type="button" className="write-mini" onClick={() => void handleWrite(tag.id)} disabled={savingTagId === tag.id}>
                               {savingTagId === tag.id ? '...' : '写入'}
@@ -1003,6 +1236,10 @@ function App() {
                             <div className="dashboard-bar-fill negative" style={{ width: `${dashboardData.triggerOffPercent}%` }} />
                           </div>
                         </div>
+                        <div className="dashboard-bar-row count-only">
+                          <div className="dashboard-bar-label">次数</div>
+                          <strong>{formatCount(dashboardData.triggerCount.numeric)}</strong>
+                        </div>
                       </div>
                     </div>
                   </article>
@@ -1127,14 +1364,11 @@ function App() {
         <button type="button" className="soft-action" onClick={() => setExpandedBrowseNodes({})}>
           折叠全部
         </button>
-        <button type="button" className="soft-action" onClick={() => void loadBrowse(activeDeviceId, null)}>
+        <button type="button" className="soft-action" onClick={() => void loadBrowse(activeDeviceId, null, true)}>
           刷新目录
         </button>
         <button type="button" className="soft-action" onClick={() => setSelectedBrowseNodes([])}>
           清空勾选
-        </button>
-        <button type="button" className="primary-action" onClick={addSelectionToBatch}>
-          加入批量配置
         </button>
       </section>
 
@@ -1145,38 +1379,94 @@ function App() {
               <div className="panel-title">目录树</div>
               <div className="panel-subtitle">目录节点展开显示，叶子节点才允许勾选</div>
             </div>
-            <span className="status-line">当前只看这个目录下的内容</span>
-          </div>
-          <div className="tree-shell">{rootBrowseNodes.length === 0 ? <div className="empty-note">暂无目录数据</div> : renderBrowseTree(null)}</div>
-        </div>
-
-        <div className="detail-column">
-          <section className="detail-panel">
-            <div className="panel-head">
-              <div>
-                <div className="panel-title">待批量配置</div>
-                <div className="panel-subtitle">勾选后统一修改显示名称与分组</div>
-              </div>
+            <div className="panel-actions panel-actions-in-head">
+              <span className="status-line">{rootBrowseLoading ? '目录加载中…' : '当前只看这个目录下的内容'}</span>
               <button type="button" className="primary-action" onClick={addSelectionToBatch}>
                 加入批量配置
               </button>
             </div>
-            <div className="mini-list">
-              {selectedBrowseNodes.length === 0 ? (
-                <div className="empty-note">当前没有勾选变量</div>
-              ) : (
-                selectedBrowseNodes.map((node) => (
-                  <div key={node.nodeId} className="mini-row">
-                    <div>
-                      <strong>{getDisplayName(node.nodeId)}</strong>
-                      <span>{node.nodeId}</span>
-                    </div>
-                    <button type="button" className="mini-button" onClick={() => toggleBrowse(node)}>
-                      移除
-                    </button>
-                  </div>
-                ))
-              )}
+          </div>
+          <div className="tree-shell">
+            {!activeDeviceId ? (
+              <div className="empty-note">请先选择设备</div>
+            ) : rootBrowseLoading && rootBrowseNodes.length === 0 ? (
+              <div className="empty-note">目录加载中…</div>
+            ) : hasLoadedRootBrowse && rootBrowseNodes.length === 0 ? (
+              <div className="empty-note">暂无目录数据</div>
+            ) : (
+              renderBrowseTree(null)
+            )}
+          </div>
+        </div>
+
+        <div className="detail-column">
+          <section className="detail-panel detail-panel-batch" ref={batchSectionRef}>
+            <div className="panel-head panel-head-stack">
+              <div>
+                <div className="panel-title">批量配置</div>
+                <div className="panel-subtitle">统一修改显示名称、分组和订阅参数，保存后立即刷新订阅</div>
+              </div>
+              <div className="batch-inline-actions">
+                <span className="status-line">{activeDeviceName} · {batchRows.length} 条待配置</span>
+                <button type="button" className="soft-action" onClick={loadDeviceTagsToBatch}>
+                  载入当前设备变量
+                </button>
+                <button type="button" className="soft-action" onClick={applyBatchDefaults} disabled={batchRows.length === 0}>
+                  应用默认规则
+                </button>
+                <button type="button" className="soft-action" onClick={clearBatchDrafts} disabled={batchRows.length === 0}>
+                  清空列表
+                </button>
+                <button type="button" className="primary-action" onClick={() => void saveBatch()} disabled={savingBatch || batchRows.length === 0}>
+                  {savingBatch ? '保存中' : '保存全部'}
+                </button>
+              </div>
+            </div>
+            <div className="table-shell batch-shell batch-inline-shell">
+              <div className="table-scroll">
+                {batchRows.length === 0 ? (
+                  <div className="empty-note batch-empty-note">先从目录树勾选变量，或载入当前设备已订阅变量。</div>
+                ) : (
+                  <table className="runtime-table batch-table">
+                    <colgroup>
+                      <col style={{ width: '320px' }} />
+                      <col style={{ width: '150px' }} />
+                      <col style={{ width: '76px' }} />
+                      <col style={{ width: '76px' }} />
+                      <col style={{ width: '64px' }} />
+                      <col style={{ width: '64px' }} />
+                      <col />
+                      <col style={{ width: '70px' }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>显示名称</th>
+                        <th>分组</th>
+                        <th>采样</th>
+                        <th>发布</th>
+                        <th>写入</th>
+                        <th>启用</th>
+                        <th>NodeId</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {batchRows.map((row, index) => (
+                        <tr key={row.id ?? `${row.nodeId}-${index}`}>
+                          <td><input value={row.displayName} onChange={(e) => updateBatchRow(index, { displayName: e.target.value })} placeholder="显示名称" /></td>
+                          <td><input value={row.groupKey} onChange={(e) => updateBatchRow(index, { groupKey: e.target.value })} placeholder="分组" /></td>
+                          <td><input type="number" value={row.samplingIntervalMs} onChange={(e) => updateBatchRow(index, { samplingIntervalMs: Number(e.target.value) || 200 })} /></td>
+                          <td><input type="number" value={row.publishingIntervalMs} onChange={(e) => updateBatchRow(index, { publishingIntervalMs: Number(e.target.value) || 200 })} /></td>
+                          <td><input type="checkbox" checked={row.allowWrite} onChange={(e) => updateBatchRow(index, { allowWrite: e.target.checked })} /></td>
+                          <td><input type="checkbox" checked={row.enabled} onChange={(e) => updateBatchRow(index, { enabled: e.target.checked })} /></td>
+                          <td className="subtle">{row.nodeId}</td>
+                          <td><button type="button" className="mini-button danger" onClick={() => void deleteBatchRow(row, index)}>删除</button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
             </div>
           </section>
 
@@ -1186,7 +1476,13 @@ function App() {
                 <div className="panel-title">已订阅变量</div>
                 <div className="panel-subtitle">当前设备下的已配置点位</div>
               </div>
-              <span className="status-line">{selectedDeviceTags.length} 个</span>
+              <div className="panel-actions panel-actions-in-head">
+                <span className="status-line">{filteredSelectedDeviceTags.length}/{selectedDeviceTags.length} 个</span>
+                <select className="header-filter" value={selectedTagGroupFilter} onChange={(e) => setSelectedTagGroupFilter(e.target.value)} aria-label="按分组筛选已订阅变量">
+                  <option value="all">全部分组</option>
+                  {selectedDeviceTagGroups.filter((g) => g !== 'all').map((g) => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
             </div>
             <div className="table-shell compact-shell">
               <div className="table-scroll">
@@ -1206,7 +1502,7 @@ function App() {
                     </tr>
                   </thead>
                   <tbody>
-                    {selectedDeviceTags.map((tag) => (
+                    {filteredSelectedDeviceTags.map((tag) => (
                       <tr key={tag.id} className="list-row">
                         <td>
                           <strong>{tag.displayName}</strong>
@@ -1237,22 +1533,82 @@ function App() {
       <div className="toast-line">{statusMessage}</div>
     </section>
   )
-  const batchPage = (
+
+  const helpPage = (
     <section className="page-shell">
-      <header className="page-header"><div className="page-copy"><h1>批量配置</h1><p>统一修改变量显示名称、分组和订阅参数后一次性保存</p></div><div className="page-meta"><span className="status-line">{activeDeviceName} · {batchRows.length} 条待配置</span><button type="button" className="soft-action" onClick={() => void loadWorkspace()} disabled={loading}>{loading ? '刷新中' : '刷新'}</button></div></header>
-      <section className="toolbar-row batch-toolbar"><select value={activeDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)}><option value="">选择设备</option>{devices.map((device) => <option key={device.id} value={device.id}>{device.name}</option>)}</select><input value={browserSearch} onChange={(e) => setBrowserSearch(e.target.value)} placeholder="搜索名称 / NodeId / 分组" /><button type="button" className="soft-action" onClick={loadDeviceTagsToBatch}>载入当前设备变量</button><button type="button" className="soft-action" onClick={applyBatchDefaults}>应用默认规则</button><button type="button" className="soft-action" onClick={clearBatchDrafts}>清空列表</button><button type="button" className="primary-action" onClick={() => void saveBatch()} disabled={savingBatch}>{savingBatch ? '保存中' : '保存全部'}</button></section>
-      <section className="content-strip batch-content"><div className="panel-head"><div><div className="panel-title">变量明细</div><div className="panel-subtitle">按行编辑，保存后立即刷新订阅</div></div><span className="status-line">默认采样 / 发布周期 200ms</span></div><div className="table-shell batch-shell"><div className="table-scroll"><table className="runtime-table batch-table"><colgroup><col style={{ width: '250px' }} /><col style={{ width: '230px' }} /><col style={{ width: '120px' }} /><col style={{ width: '120px' }} /><col style={{ width: '96px' }} /><col style={{ width: '96px' }} /><col /><col style={{ width: '120px' }} /></colgroup><thead><tr><th>显示名称</th><th>分组</th><th>采样</th><th>发布</th><th>写入</th><th>启用</th><th>NodeId</th><th>操作</th></tr></thead><tbody>{batchRows.map((row, index) => <tr key={row.id ?? `${row.nodeId}-${index}`}><td><input value={row.displayName} onChange={(e) => updateBatchRow(index, { displayName: e.target.value })} placeholder="显示名称" /></td><td><input value={row.groupKey} onChange={(e) => updateBatchRow(index, { groupKey: e.target.value })} placeholder="分组" /></td><td><input type="number" value={row.samplingIntervalMs} onChange={(e) => updateBatchRow(index, { samplingIntervalMs: Number(e.target.value) || 200 })} /></td><td><input type="number" value={row.publishingIntervalMs} onChange={(e) => updateBatchRow(index, { publishingIntervalMs: Number(e.target.value) || 200 })} /></td><td><input type="checkbox" checked={row.allowWrite} onChange={(e) => updateBatchRow(index, { allowWrite: e.target.checked })} /></td><td><input type="checkbox" checked={row.enabled} onChange={(e) => updateBatchRow(index, { enabled: e.target.checked })} /></td><td className="subtle">{row.nodeId}</td><td><button type="button" className="mini-button danger" onClick={() => void deleteBatchRow(row, index)}>删除</button></td></tr>)}</tbody></table></div></div></section><div className="toast-line">{statusMessage}</div></section>
+      <header className="page-header">
+        <div className="page-copy">
+          <h1>帮助文档</h1>
+          <p>系统内置 PDF 阅读器</p>
+        </div>
+      </header>
+
+      <section className="content-strip help-layout">
+        <div className="help-pdf-shell">
+          <iframe className="help-pdf-frame" src="/help/manual#zoom=100" title="系统操作手册 PDF" />
+        </div>
+      </section>
+
+      <div className="toast-line">{statusMessage}</div>
+    </section>
   )
 
-  const devicesPage = (
+  const loginPage = (
     <section className="page-shell">
-      <header className="page-header"><div className="page-copy"><h1>设备管理</h1><p>只保留匿名登录，管理 OPC UA 连接参数和在线状态</p></div><div className="page-meta"><span className="status-line">{devices.filter((device) => /connected/i.test(device.status)).length}/{devices.length || 0} 在线</span><button type="button" className="soft-action" onClick={() => void loadWorkspace()} disabled={loading}>{loading ? '刷新中' : '刷新'}</button></div></header>
-      <section className="content-strip devices-layout"><div className="device-form-panel"><div className="panel-head"><div><div className="panel-title">{editingDeviceId ? '编辑设备' : '新建设备'}</div><div className="panel-subtitle">匿名登录，保存后可直接连接</div></div><span className="status-line">仅匿名登录</span></div><div className="form-grid"><label><span>设备名称</span><input value={deviceForm.name} onChange={(e) => setDeviceForm((current) => ({ ...current, name: e.target.value }))} placeholder="HCFA-PLC" /></label><label><span>Endpoint URL</span><input value={deviceForm.endpointUrl} onChange={(e) => setDeviceForm((current) => ({ ...current, endpointUrl: e.target.value }))} placeholder="opc.tcp://192.168.88.1:4840" /></label><label><span>安全模式</span><select value={deviceForm.securityMode} onChange={(e) => setDeviceForm((current) => ({ ...current, securityMode: e.target.value }))}><option value="None">None</option><option value="Sign">Sign</option><option value="SignAndEncrypt">SignAndEncrypt</option></select></label><label><span>安全策略</span><select value={deviceForm.securityPolicy} onChange={(e) => setDeviceForm((current) => ({ ...current, securityPolicy: e.target.value }))}><option value="None">None</option><option value="Basic256Sha256">Basic256Sha256</option><option value="Basic128Rsa15">Basic128Rsa15</option></select></label><label className="inline-check"><input type="checkbox" checked={deviceForm.autoConnect} onChange={(e) => setDeviceForm((current) => ({ ...current, autoConnect: e.target.checked }))} /><span>启动时自动连接</span></label><div className="form-note">认证模式已固定为匿名登录，用户名和密码不在界面中展示。</div></div><div className="panel-actions"><button type="button" className="primary-action" onClick={() => void handleSaveDevice()} disabled={savingDeviceId !== null}>{editingDeviceId ? '更新设备' : '创建设备'}</button><button type="button" className="soft-action" onClick={() => { setEditingDeviceId(null); setDeviceForm(blankDeviceForm()) }}>重置</button></div></div><div className="device-list-panel"><div className="panel-head"><div><div className="panel-title">设备列表</div><div className="panel-subtitle">可直接连接、断开、编辑</div></div><span className="status-line">{devices.length} 个设备</span></div><div className="table-shell device-shell"><div className="table-scroll"><table className="list-table"><colgroup><col style={{ width: '170px' }} /><col style={{ width: '100px' }} /><col /><col style={{ width: '86px' }} /><col style={{ width: '120px' }} /></colgroup><thead><tr><th>设备</th><th>状态</th><th>Endpoint</th><th>自动</th><th>操作</th></tr></thead><tbody>{devices.map((device) => <tr key={device.id} className="list-row"><td><strong>{device.name}</strong><div className="node-meta">{device.updatedAt ? new Date(device.updatedAt).toLocaleString('zh-CN') : '-'}</div></td><td><span className={`status-pill ${/connected/i.test(device.status) ? 'normal' : 'fault'}`}>{device.status}</span></td><td className="subtle">{device.endpointUrl}</td><td>{device.autoConnect ? '是' : '否'}</td><td><div className="row-actions"><button type="button" className="mini-button" onClick={() => editDevice(device)}>编辑</button><button type="button" className="mini-button" onClick={() => void connect(device.id)}>连接</button><button type="button" className="mini-button" onClick={() => void disconnect(device.id)}>断开</button></div></td></tr>)}</tbody></table></div></div></div></section><div className="toast-line">{statusMessage}</div></section>
+      <header className="page-header">
+        <div className="page-copy">
+          <h1>用户登录</h1>
+          <p>登录后才显示“标签”和“订阅”菜单</p>
+        </div>
+      </header>
+
+      <section className="content-strip login-layout">
+        <div className="login-card">
+          <div className="login-head">
+            <h2>欢迎登录</h2>
+          </div>
+
+          {isAuthenticated ? (
+            <div className="login-success">
+              <strong>当前已登录用户：ZXC</strong>
+              <p>你现在可以使用“标签”和“订阅”两项功能。</p>
+              <button type="button" className="login-submit" onClick={handleLogout}>退出登录</button>
+            </div>
+          ) : (
+            <form className="login-form" onSubmit={handleLoginSubmit}>
+              <label>
+                <span>用户名</span>
+                <input className="login-input" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} placeholder="请输入用户名" autoComplete="username" />
+              </label>
+              <label>
+                <span>密码</span>
+                <input className="login-input" type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="请输入密码" autoComplete="current-password" />
+              </label>
+              <button type="submit" className="login-submit">登录</button>
+            </form>
+          )}
+        </div>
+      </section>
+
+      <div className="toast-line">{statusMessage}</div>
+    </section>
   )
 
-  if (view === 'dashboard') return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-mark">SCADA</div></div><nav className="sidebar-nav" aria-label="主导航">{sidebarItems.map((item) => <button key={item.key} type="button" className={view === item.key ? 'nav-item active' : 'nav-item'} onClick={() => setView(item.key)}><span className="nav-icon">{item.icon}</span><span className="nav-label">{item.label}</span></button>)}</nav></aside><main className="workspace">{dashboardPage}</main></div>
-  if (view === 'runtime') return runtimePage
-  return <div className="app-shell"><aside className="sidebar"><div className="brand"><div className="brand-mark">SCADA</div></div><nav className="sidebar-nav" aria-label="主导航">{sidebarItems.map((item) => <button key={item.key} type="button" className={view === item.key ? 'nav-item active' : 'nav-item'} onClick={() => setView(item.key)}><span className="nav-icon">{item.icon}</span><span className="nav-label">{item.label}</span></button>)}</nav></aside><main className="workspace">{view === 'tags' ? tagsPage : view === 'batch' ? batchPage : devicesPage}</main></div>
+  const sidebarShell = (
+    <aside className="sidebar">
+      <div className="brand">
+        <div className="brand-mark">清洗机测试系统</div>
+      </div>
+      <nav className="sidebar-nav" aria-label="主导航">
+        {renderSidebarButtons('default')}
+      </nav>
+
+    </aside>
+  )
+
+  if (view === 'dashboard') return <div className="app-shell">{sidebarShell}<main className="workspace">{dashboardPage}</main></div>
+  if (view === 'runtime') return isAuthenticated ? runtimePage : <div className="app-shell">{sidebarShell}<main className="workspace">{loginPage}</main></div>
+  return <div className="app-shell">{sidebarShell}<main className="workspace">{view === 'tags' ? (isAuthenticated ? tagsPage : loginPage) : view === 'help' ? helpPage : loginPage}</main></div>
 }
 
 export default App
