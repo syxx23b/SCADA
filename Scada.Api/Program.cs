@@ -8,7 +8,10 @@ using Scada.OpcUa.Abstractions;
 using Scada.OpcUa.Services;
 
 var builder = WebApplication.CreateBuilder(args);
-var scadaConnectionString = ResolveSqliteConnectionString(builder.Configuration.GetConnectionString("ScadaDb") ?? "Data Source=scada.db");
+var scadaConnectionString = ResolveSqliteConnectionString(
+    builder.Configuration.GetConnectionString("ScadaDb") ?? "Data Source=scada.db",
+    builder.Environment.ContentRootPath);
+
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
@@ -46,7 +49,10 @@ builder.Services.AddHostedService<StartupConnectionInitializerHostedService>();
 
 var app = builder.Build();
 
+app.Logger.LogInformation("Using SQLite database at {DatabasePath}", new SqliteConnectionStringBuilder(scadaConnectionString).DataSource);
+
 app.UseCors();
+
 app.UseAuthorization();
 app.UseDefaultFiles();
 app.UseStaticFiles();
@@ -67,17 +73,18 @@ app.MapFallbackToFile("index.html");
 
 app.Run();
 
-static string ResolveSqliteConnectionString(string connectionString)
+static string ResolveSqliteConnectionString(string connectionString, string basePath)
 {
     var builder = new SqliteConnectionStringBuilder(connectionString);
     if (!string.IsNullOrWhiteSpace(builder.DataSource) &&
         builder.DataSource != ":memory:" &&
         !Path.IsPathRooted(builder.DataSource))
     {
-        builder.DataSource = Path.Combine(AppContext.BaseDirectory, builder.DataSource);
+        builder.DataSource = Path.Combine(basePath, builder.DataSource);
     }
 
     return builder.ToString();
 }
+
 
 public partial class Program;

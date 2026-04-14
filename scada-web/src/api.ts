@@ -98,25 +98,9 @@ export function getRuntimeOverview() {
   return request<RuntimeOverview>('/api/runtime/overview')
 }
 
-export function openVncTool(host: string, password: string) {
+export function openVncTool(host: string) {
   return request<{ message: string }>('/api/tools/vnc/open', {
     method: 'POST',
-    body: JSON.stringify({ host, password }),
-  })
-}
-
-export function exportLocalTags(): Promise<Blob> {
-  return fetch('/api/tags/export/local').then((response) => {
-    if (!response.ok) {
-      throw new Error('Export failed')
-    }
-    return response.blob()
-  })
-}
-
-export function importLocalTags(tags: { id: string; deviceId: string; displayName: string; browseName?: string; nodeId?: string; dataType?: string; groupKey?: string }[]) {
-  return request<{ total: number; updated: number; failed: number; errors: string[] }>('/api/tags/import/local', {
-    method: 'POST',
-    body: JSON.stringify({ tags }),
+    body: JSON.stringify({ host }),
   })
 }

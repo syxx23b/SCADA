@@ -57,6 +57,6 @@ public sealed class ToolsController : ControllerBase
         return StatusCode(500, "Cannot launch RealVNC. Please verify RealVNC Viewer is installed.");
     }
 
-    public sealed record VncOpenRequest(string Host, string? Password);
+    public sealed record VncOpenRequest(string Host);
     public sealed record VncOpenResponse(string Message);
 }

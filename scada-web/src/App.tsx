@@ -883,7 +883,7 @@ function App() {
     const host = hostByFaceplate[faceplateIndex]
     if (!host) return
     try {
-      const result = await openVncTool(host, '111111')
+      const result = await openVncTool(host)
       setStatusMessage(result.message || `已尝试打开 RealVNC: ${host}:5900`)
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : `打开 RealVNC 失败: ${host}:5900`)

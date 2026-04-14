@@ -13,6 +13,8 @@ scada-web/dist/
 *.db.before-*.bak
 *.db.before-*.bak-shm
 *.db.before-*.bak-wal
+*.db.corrupt.bak
+tags_scada_db_before*.csv
 .runlogs/
 
 # Local package/cache folders
