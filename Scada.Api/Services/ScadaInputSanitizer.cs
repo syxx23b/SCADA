@@ -6,6 +6,14 @@ namespace Scada.Api.Services;
 public static class ScadaInputSanitizer
 {
     private static readonly Regex RecipePattern = new(@"^Recipe_DB\.(?:DJRecipe|QYJRecipe|QYIRecipe)(?:\[(\d+)\]|(\d+))?(?:\.|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LocalRecipeNameLegacyPattern = new(@"^Local\.Recipe_DB\.RecipeName(\[(\d+)\])$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LocalRecipeNameLegacyUnderscorePattern = new(@"^Local\.Recipe_DB_RecipeName(\[(\d+)\])$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LocalRecipeDjLegacyPattern = new(@"^Local\.Recipe_DB\.DJRecipe(?:\[(\d+)\])?\.(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LocalRecipeDjLegacyUnderscorePattern = new(@"^Local\.Recipe_DB_DJRecipe(?:\[(\d+)\])?_(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LocalRecipeQyjLegacyPattern = new(@"^Local\.Recipe_DB\.(?:QYJRecipe|QYIRecipe)(?:\[(\d+)\])?\.(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LocalRecipeQyjLegacyUnderscorePattern = new(@"^Local\.Recipe_DB_(?:QYJRecipe|QYIRecipe)(?:\[(\d+)\])?_(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LocalPlainPattern = new(@"^Local\.([^.]+)(?:\.[^.]+)*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
 
     public static SanitizedDevicePayload NormalizeDevice(UpsertDeviceRequest request)
     {
@@ -56,9 +64,12 @@ public static class ScadaInputSanitizer
             throw new ArgumentException("DisplayName is required.");
         }
 
-        var displayName = request.DisplayName.Trim();
         var groupKey = string.IsNullOrWhiteSpace(request.GroupKey) ? null : request.GroupKey.Trim();
         var isLocalVariable = IsLocalVariableGroup(groupKey);
+        var displayName = isLocalVariable
+            ? NormalizeLocalRecipeDisplayName(request.DisplayName.Trim())
+            : request.DisplayName.Trim();
+
 
         if (!isLocalVariable && string.IsNullOrWhiteSpace(request.NodeId))
         {
@@ -72,16 +83,30 @@ public static class ScadaInputSanitizer
         var samplingIntervalMs = isLocalVariable ? 0 : Math.Max(100, request.SamplingIntervalMs);
         var publishingIntervalMs = isLocalVariable ? 0 : Math.Max(100, request.PublishingIntervalMs);
 
-        if (!isLocalVariable)
+        if (isLocalVariable)
+        {
+            groupKey = ResolveLocalVariableGroupKey(groupKey, displayName);
+        }
+        else
         {
             ApplyRecipeRule(nodeId, ref samplingIntervalMs, ref publishingIntervalMs, ref groupKey);
+        }
+
+
+        var browseName = string.IsNullOrWhiteSpace(request.BrowseName)
+            ? displayName
+            : request.BrowseName.Trim();
+        if (isLocalVariable)
+        {
+            browseName = NormalizeLocalRecipeDisplayName(browseName);
         }
 
         return new SanitizedTagPayload(
             request.DeviceId,
             nodeId,
-            string.IsNullOrWhiteSpace(request.BrowseName) ? displayName : request.BrowseName.Trim(),
+            browseName,
             displayName,
+
             string.IsNullOrWhiteSpace(request.DataType) ? "String" : request.DataType.Trim(),
             samplingIntervalMs,
             publishingIntervalMs,
@@ -160,11 +185,85 @@ public static class ScadaInputSanitizer
 
     private static bool IsLocalVariableGroup(string? groupKey)
     {
-        return !string.IsNullOrWhiteSpace(groupKey) &&
-               groupKey.Trim().Equals("Local Variable", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(groupKey))
+        {
+            return false;
+        }
+
+        var normalized = groupKey.Trim();
+        return normalized.Equals("Local", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Local Variable", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Device1_LocalVariable", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Local.RecipeDJ", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Local.RecipeQYJ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveLocalVariableGroupKey(string? requestedGroupKey, string displayName)
+    {
+        return "Local";
+    }
+
+    private static bool TryResolveLocalRecipeGroup(string displayName, out string localRecipeGroup)
+    {
+        localRecipeGroup = "Local";
+        return true;
+    }
+
+    private static string NormalizeLocalRecipeDisplayName(string displayName)
+    {
+        var trimmed = displayName.Trim();
+
+        // RecipeName patterns (dot and underscore versions)
+        var recipeNameMatch = LocalRecipeNameLegacyPattern.Match(trimmed);
+        if (recipeNameMatch.Success)
+        {
+            return $"Local.RecipeName{recipeNameMatch.Groups[1].Value}";
+        }
+
+        var recipeNameUnderscoreMatch = LocalRecipeNameLegacyUnderscorePattern.Match(trimmed);
+        if (recipeNameUnderscoreMatch.Success)
+        {
+            return $"Local.RecipeName{recipeNameUnderscoreMatch.Groups[1].Value}";
+        }
+
+        // DJRecipe patterns (dot and underscore versions)
+        var djMatch = LocalRecipeDjLegacyPattern.Match(trimmed);
+        if (djMatch.Success)
+        {
+            return $"Local.RecipeDJ.{djMatch.Groups[2].Value.Trim()}";
+        }
+
+        var djUnderscoreMatch = LocalRecipeDjLegacyUnderscorePattern.Match(trimmed);
+        if (djUnderscoreMatch.Success)
+        {
+            return $"Local.RecipeDJ.{djUnderscoreMatch.Groups[2].Value.Trim()}";
+        }
+
+        // QYJ/QYI Recipe patterns (dot and underscore versions)
+        var qyjMatch = LocalRecipeQyjLegacyPattern.Match(trimmed);
+        if (qyjMatch.Success)
+        {
+            return $"Local.RecipeQYJ.{qyjMatch.Groups[2].Value.Trim()}";
+        }
+
+        var qyjUnderscoreMatch = LocalRecipeQyjLegacyUnderscorePattern.Match(trimmed);
+        if (qyjUnderscoreMatch.Success)
+        {
+            return $"Local.RecipeQYJ.{qyjUnderscoreMatch.Groups[2].Value.Trim()}";
+        }
+
+        // Plain Local variables (non-Recipe) -> RecipeDJ
+        var plainMatch = LocalPlainPattern.Match(trimmed);
+        if (plainMatch.Success && !trimmed.StartsWith("Local.Recipe", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Local.RecipeDJ.{plainMatch.Groups[1].Value.Trim()}";
+        }
+
+        return trimmed;
     }
 
     private static string BuildLocalNodeId(string? requestedNodeId, string displayName)
+
     {
         if (!string.IsNullOrWhiteSpace(requestedNodeId))
         {

@@ -438,54 +438,54 @@
 .runtime-device-status-main { min-width: 0; display: grid; gap: 2px; }
 .runtime-device-name { font-size: 0.84rem; font-weight: 700; color: #1f2937; }
 .runtime-toolbar-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px 12px 20px; background: #fff; }
-.runtime-toolbar-row--compact { min-height: 42px; padding: 8px 20px; border-bottom: 1px solid var(--tabler-stroke); }
-.runtime-toolbar-meta { display: flex; align-items: center; gap: 14px; font-size: 0.76rem; color: #8a93a9; }
+.runtime-toolbar-row--compact { min-height: 36px; padding: 6px 16px; border-bottom: 1px solid var(--tabler-stroke); }
+.runtime-toolbar-meta { display: flex; align-items: center; gap: 12px; font-size: 0.7rem; line-height: 1.2; color: #8a93a9; }
 
-.runtime-selected { font-size: 0.92rem; color: #5c6477; min-width: 90px; }
+.runtime-selected { font-size: 0.88rem; color: #5c6477; min-width: 90px; }
 .runtime-actions-group { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
-.action-dropdown, .filter-dropdown, .primary-project-button, .runtime-filter { min-height: 40px; border-radius: 10px; border: 1px solid #d6dbea; background: #fff; color: #4a556f; font-size: 0.88rem; padding: 0 16px; cursor: pointer; }
-.action-dropdown { min-width: 106px; font-weight: 600; }
-.filter-dropdown { min-width: 100px; display: inline-flex; align-items: center; gap: 8px; }
-.runtime-filter { min-width: 124px; }
-.clear-icon { width: 28px; height: 28px; border: 0; background: transparent; color: #ef4d4d; font-size: 1.4rem; cursor: pointer; }
-.runtime-search { display: flex; align-items: center; gap: 10px; min-height: 40px; flex: 1; max-width: 380px; border: 1px solid #d6dbea; border-radius: 10px; background: #fff; padding: 0 12px; color: #8a93a9; box-shadow: 0 1px 0 rgba(255,255,255,0.7) inset; }
-.runtime-search input { border: 0; background: transparent; min-height: 38px; padding: 0; flex: 1; outline: none; color: #27324b; }
-.runtime-search kbd { display: inline-flex; min-width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 6px; background: #f3f4fb; font-size: 0.74rem; color: #9aa2b9; }
-.primary-project-button { background: #6258e7; border-color: #6258e7; color: #fff; padding: 0 16px; min-width: 92px; justify-self: end; box-shadow: 0 6px 14px rgba(98, 88, 231, 0.16); }
-.runtime-tabs { display: flex; align-items: center; gap: 14px; padding: 10px 24px 0 18px; background: #fff; border-bottom: 1px solid #edf0f6; }
-.runtime-tab { position: relative; border: 0; background: transparent; color: #7b8197; font-size: 0.92rem; font-weight: 600; padding: 12px 2px 14px; cursor: pointer; display: inline-flex; gap: 8px; align-items: center; }
-.runtime-tab span { display: inline-flex; min-width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 999px; background: #f4f6fb; color: #9aa2b3; font-size: 0.72rem; font-weight: 600; }
+.action-dropdown, .filter-dropdown, .primary-project-button, .runtime-filter { min-height: 36px; border-radius: 10px; border: 1px solid #d6dbea; background: #fff; color: #4a556f; font-size: 0.82rem; padding: 0 14px; cursor: pointer; }
+.action-dropdown { min-width: 100px; font-weight: 600; }
+.filter-dropdown { min-width: 96px; display: inline-flex; align-items: center; gap: 6px; }
+.runtime-filter { min-width: 118px; }
+.clear-icon { width: 24px; height: 24px; border: 0; background: transparent; color: #ef4d4d; font-size: 1.2rem; cursor: pointer; }
+.runtime-search { display: flex; align-items: center; gap: 8px; min-height: 36px; flex: 1; max-width: 360px; border: 1px solid #d6dbea; border-radius: 10px; background: #fff; padding: 0 10px; color: #8a93a9; box-shadow: 0 1px 0 rgba(255,255,255,0.7) inset; }
+.runtime-search input { border: 0; background: transparent; min-height: 34px; padding: 0; flex: 1; outline: none; color: #27324b; font-size: 0.78rem; }
+.runtime-search kbd { display: inline-flex; min-width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 6px; background: #f3f4fb; font-size: 0.68rem; color: #9aa2b9; }
+.primary-project-button { background: #6258e7; border-color: #6258e7; color: #fff; padding: 0 14px; min-width: 86px; justify-self: end; box-shadow: 0 6px 14px rgba(98, 88, 231, 0.16); }
+.runtime-tabs { display: flex; align-items: center; gap: 12px; padding: 8px 20px 0 16px; background: #fff; border-bottom: 1px solid #edf0f6; }
+.runtime-tab { position: relative; border: 0; background: transparent; color: #7b8197; font-size: 0.84rem; font-weight: 600; padding: 10px 2px 12px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.runtime-tab span { display: inline-flex; min-width: 18px; height: 18px; align-items: center; justify-content: center; border-radius: 999px; background: #f4f6fb; color: #9aa2b3; font-size: 0.66rem; font-weight: 600; }
 .runtime-tab.active { color: #6258e7; }
 .runtime-tab.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: #6258e7; border-radius: 999px; }
 .runtime-tab.fault { color: #e26c6c; }
 .runtime-tab.fault span { background: #fff0f0; color: #e26c6c; }
-.runtime-table-wrap { flex: 1; min-height: 0; background: #fff; border: 1px solid var(--tabler-stroke); border-radius: 12px; overflow: hidden; box-shadow: 0 8px 24px rgba(16,24,40,0.05); }
+.runtime-table-wrap { flex: 1; min-height: 0; background: #fff; border: 1px solid var(--tabler-stroke); border-radius: 12px; overflow: hidden; box-shadow: 0 8px 24px rgba(16,24,40,0.05); margin: 8px 10px 10px; }
 .runtime-table-shell { height: 100%; overflow: auto; background: #fff; }
-.project-table { font-size: 0.78rem; table-layout: fixed; }
-.project-table thead th { height: 30px; background: #fafbfe; color: #7a8397; border-bottom: 0; text-transform: none; letter-spacing: 0; font-size: 0.72rem; font-weight: 600; padding: 0 8px; }
-.project-table tbody td { height: 28px; border-bottom: 0; color: #3a4259; padding: 0 8px; }
+.project-table { font-size: 0.72rem; line-height: 1.15; table-layout: fixed; }
+.project-table thead th { height: 26px; background: #fafbfe; color: #7a8397; border-bottom: 0; text-transform: none; letter-spacing: 0; font-size: 0.66rem; font-weight: 600; padding: 0 6px; }
+.project-table tbody td { height: 24px; border-bottom: 0; color: #3a4259; padding: 0 6px; }
 .project-table tbody tr:nth-child(odd) { background: #fff; }
 .project-table tbody tr:nth-child(even) { background: #f5f6ff; }
 .project-table tbody tr.selected { background: #ecebff; }
 .checkbox-col { text-align: center; }
-.checkbox-col input { width: 16px; height: 16px; accent-color: #6258e7; }
-.row-index { color: #20283a; font-weight: 500; text-align: center; font-size: 0.72rem; }
-.row-arrow { width: 22px; height: 22px; border-radius: 999px; border: 1px solid #cdd4e7; background: #fff; color: #6e7591; cursor: pointer; }
-.project-name { color: #5d57ed; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.68rem; }
-.project-value { color: #1f2a3b; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.72rem; }
-.avatar-mini { width: 26px; height: 26px; border-radius: 8px; background: #eceffd; color: #6a61f0; display: grid; place-items: center; font-size: 0.66rem; font-weight: 700; }
-.project-status { display: inline-flex; align-items: center; gap: 6px; min-height: 18px; padding: 0 8px; border-radius: 5px; font-size: 0.66rem; font-weight: 700; }
-.project-status .dot { width: 6px; height: 6px; border-radius: 2px; background: currentColor; }
+.checkbox-col input { width: 14px; height: 14px; accent-color: #6258e7; }
+.row-index { color: #20283a; font-weight: 500; text-align: center; font-size: 0.66rem; line-height: 1; }
+.row-arrow { width: 20px; height: 20px; border-radius: 999px; border: 1px solid #cdd4e7; background: #fff; color: #6e7591; cursor: pointer; }
+.project-name { color: #5d57ed; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.64rem; line-height: 1.1; }
+.project-value { color: #1f2a3b; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.68rem; line-height: 1.1; }
+.avatar-mini { width: 24px; height: 24px; border-radius: 8px; background: #eceffd; color: #6a61f0; display: grid; place-items: center; font-size: 0.62rem; font-weight: 700; }
+.project-status { display: inline-flex; align-items: center; gap: 5px; min-height: 16px; padding: 0 6px; border-radius: 5px; font-size: 0.62rem; font-weight: 700; line-height: 1; }
+.project-status .dot { width: 5px; height: 5px; border-radius: 2px; background: currentColor; }
 .project-status.green { color: #1b9953; background: #ebfbf1; }
 .project-status.red { color: #e05b61; background: #fff0f0; }
-.project-pill { display: inline-flex; align-items: center; min-height: 18px; padding: 0 8px; border-radius: 5px; background: transparent; color: #6f7688; font-weight: 500; font-size: 0.68rem; }
-.write-cell { display: flex; gap: 6px; align-items: center; justify-content: center; }
-.write-cell input { width: 100%; min-width: 56px; max-width: 64px; min-height: 20px; border-radius: 4px; border: 1px solid #d9def0; background: #fff; padding: 0 6px; font-size: 0.64rem; }
-.write-mini { min-height: 20px; border-radius: 4px; border: 1px solid #d9def0; background: #6258e7; color: #fff; padding: 0 8px; cursor: pointer; font-size: 0.64rem; }
+.project-pill { display: inline-flex; align-items: center; min-height: 16px; padding: 0 6px; border-radius: 5px; background: transparent; color: #6f7688; font-weight: 500; font-size: 0.64rem; line-height: 1; }
+.write-cell { display: flex; gap: 4px; align-items: center; justify-content: center; }
+.write-cell input { width: 100%; min-width: 52px; max-width: 60px; min-height: 18px; border-radius: 4px; border: 1px solid #d9def0; background: #fff; padding: 0 5px; font-size: 0.6rem; }
+.write-mini { min-height: 18px; border-radius: 4px; border: 1px solid #d9def0; background: #6258e7; color: #fff; padding: 0 7px; cursor: pointer; font-size: 0.6rem; }
 .write-mini:disabled { opacity: 0.7; cursor: progress; }
-.time-cell { font-size: 0.68rem; white-space: nowrap; }
-.table-filter-head { display: flex; align-items: center; gap: 6px; justify-content: center; }
-.header-filter { min-height: 20px; height: 20px; border: 1px solid #d6dbea; background: #fff; color: #6f7890; font-size: 0.64rem; padding: 0 4px; border-radius: 4px; max-width: 72px; }
+.time-cell { font-size: 0.64rem; line-height: 1.1; white-space: nowrap; }
+.table-filter-head { display: flex; align-items: center; gap: 4px; justify-content: center; }
+.header-filter { min-height: 18px; height: 18px; border: 1px solid #d6dbea; background: #fff; color: #6f7890; font-size: 0.6rem; padding: 0 3px; border-radius: 4px; max-width: 68px; }
 
 @media (max-width: 1500px) {
   .dashboard-center-with-editor { flex-direction: column; align-items: center; }
@@ -1216,6 +1216,88 @@
   font-weight: 400 !important;
   color: currentColor !important;
 }
+
+/* === 全局灰色背景 + 表格对比 + 小标题蓝底白字（最终覆盖） === */
+:root {
+  --tabler-bg: #eceff3;
+}
+
+html,
+body,
+#root,
+.app-shell,
+.runtime-shell,
+.workspace,
+.page-shell,
+.runtime-content,
+.dashboard-shell,
+.content-strip,
+.runtime-main,
+.tags-layout,
+.devices-layout,
+.device-status-layout,
+.help-layout,
+.login-layout {
+  background: #eceff3 !important;
+}
+
+/* 表格容器保持白色，和全局灰底形成区分 */
+.runtime-table-wrap,
+.runtime-table-shell,
+.table-shell,
+.table-scroll,
+.browser-shell,
+.compact-shell,
+.device-shell,
+.batch-shell,
+.browser-panel,
+.detail-panel,
+.device-form-panel,
+.device-list-panel,
+.help-pdf-shell,
+.login-card {
+  background: #ffffff !important;
+}
+
+.runtime-table thead th,
+.list-table thead th,
+.project-table thead th,
+.batch-table thead th {
+  background: #f4f7fb !important;
+}
+
+.runtime-table tbody tr:nth-child(odd),
+.list-table tbody tr:nth-child(odd),
+.project-table tbody tr:nth-child(odd),
+.batch-table tbody tr:nth-child(odd) {
+  background: #ffffff !important;
+}
+
+.runtime-table tbody tr:nth-child(even),
+.list-table tbody tr:nth-child(even),
+.project-table tbody tr:nth-child(even),
+.batch-table tbody tr:nth-child(even) {
+  background: #f8fafd !important;
+}
+
+/* 小标题：恢复为普通样式（无蓝色背景） */
+.panel-title,
+.dashboard-card-title,
+.login-head h2 {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0;
+  background: transparent !important;
+  color: #1f2a3b !important;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  font-weight: 700;
+  border-radius: 0;
+}
+
+
+
 
 
 

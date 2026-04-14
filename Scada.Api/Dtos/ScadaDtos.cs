@@ -97,6 +97,24 @@ public sealed record DeviceStatusChangedDto(
     string Message,
     DateTimeOffset OccurredAt);
 
+public sealed record TagUpdateItem(
+    Guid Id,
+    Guid DeviceId,
+    string DisplayName,
+    string? BrowseName,
+    string? NodeId,
+    string? DataType,
+    string? GroupKey);
+
+public sealed record TagImportRequest(
+    List<TagUpdateItem> Tags);
+
+public sealed record TagImportResultDto(
+    int Total,
+    int Updated,
+    int Failed,
+    List<string> Errors);
+
 public static class ScadaDtoMapper
 {
     public static DeviceConnectionDto ToDto(this DeviceConnectionEntity entity)

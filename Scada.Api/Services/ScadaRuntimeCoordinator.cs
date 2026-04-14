@@ -284,9 +284,20 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
 
     private static bool IsLocalStaticTag(TagDefinitionEntity tag)
     {
-        return !string.IsNullOrWhiteSpace(tag.GroupKey) &&
-               tag.GroupKey.Trim().Equals("Local Variable", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(tag.GroupKey))
+        {
+            return false;
+        }
+
+        var normalized = tag.GroupKey.Trim();
+        return normalized.Equals("Local Variable", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Local", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Device1_LocalVariable", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Local.RecipeDJ", StringComparison.OrdinalIgnoreCase) ||
+               normalized.Equals("Local.RecipeQYJ", StringComparison.OrdinalIgnoreCase);
+
     }
+
 
     private static OpcUaConnectionOptions ToConnectionOptions(DeviceConnectionEntity device)
     {

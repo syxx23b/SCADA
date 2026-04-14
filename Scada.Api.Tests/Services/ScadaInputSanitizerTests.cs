@@ -178,11 +178,146 @@ public sealed class ScadaInputSanitizerTests
 
         var result = ScadaInputSanitizer.NormalizeTag(request);
 
-        Assert.Equal("Local Variable", result.GroupKey);
+        Assert.Equal("Local", result.GroupKey);
         Assert.StartsWith("local://static/", result.NodeId, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(0, result.SamplingIntervalMs);
         Assert.Equal(0, result.PublishingIntervalMs);
     }
+
+    [Fact]
+    public void NormalizeTag_ForLocalLegacyRecipeName_NormalizesToLocalRecipeName()
+    {
+        var request = new UpsertTagRequest(
+            Guid.NewGuid(),
+            "",
+            "Local.Recipe_DB.RecipeName[1]",
+            "Local.Recipe_DB.RecipeName[1]",
+            "String",
+            200,
+            300,
+            true,
+            true,
+            "Local Variable");
+
+        var result = ScadaInputSanitizer.NormalizeTag(request);
+
+        Assert.Equal("Local.RecipeName[1]", result.DisplayName);
+        Assert.Equal("Local.RecipeName[1]", result.BrowseName);
+        Assert.Equal("Local", result.GroupKey);
+        Assert.Equal(0, result.SamplingIntervalMs);
+        Assert.Equal(0, result.PublishingIntervalMs);
+    }
+
+    [Fact]
+    public void NormalizeTag_ForLocalLegacyRecipeVariables_GroupsIntoLocal()
+    {
+        var djRequest = new UpsertTagRequest(
+            Guid.NewGuid(),
+            "",
+            "Local.Recipe_DB.DJRecipe[1].barcodeLength",
+            "Local.Recipe_DB.DJRecipe[1].barcodeLength",
+            "Int32",
+            200,
+            300,
+            true,
+            true,
+            "Local Variable");
+
+        var qyjRequest = new UpsertTagRequest(
+            Guid.NewGuid(),
+            "",
+            "Local.Recipe_DB.QYJRecipe[1].barcodeLength",
+            "Local.Recipe_DB.QYJRecipe[1].barcodeLength",
+            "Int32",
+            200,
+            300,
+            true,
+            true,
+            "Local Variable");
+
+        var djResult = ScadaInputSanitizer.NormalizeTag(djRequest);
+        var qyjResult = ScadaInputSanitizer.NormalizeTag(qyjRequest);
+
+        Assert.Equal("Local.RecipeDJ.barcodeLength", djResult.DisplayName);
+        Assert.Equal("Local", djResult.GroupKey);
+        Assert.Equal(0, djResult.SamplingIntervalMs);
+        Assert.Equal(0, djResult.PublishingIntervalMs);
+
+        Assert.Equal("Local.RecipeQYJ.barcodeLength", qyjResult.DisplayName);
+        Assert.Equal("Local", qyjResult.GroupKey);
+        Assert.Equal(0, qyjResult.SamplingIntervalMs);
+        Assert.Equal(0, qyjResult.PublishingIntervalMs);
+    }
+
+    [Fact]
+    public void NormalizeTag_ForPlainLocalVariable_NormalizesToRecipeDJ()
+    {
+        var request = new UpsertTagRequest(
+            Guid.NewGuid(),
+            "",
+            "Local.blowTime",
+            "Local.blowTime",
+            "Int32",
+            200,
+            300,
+            true,
+            true,
+            "Local");
+
+        var result = ScadaInputSanitizer.NormalizeTag(request);
+
+        Assert.Equal("Local.RecipeDJ.blowTime", result.DisplayName);
+        Assert.Equal("Local", result.GroupKey);
+        Assert.Equal(0, result.SamplingIntervalMs);
+        Assert.Equal(0, result.PublishingIntervalMs);
+    }
+
+    [Fact]
+    public void NormalizeTag_ForQyjRecipeVariable_NormalizesToRecipeQYJ()
+    {
+        var request = new UpsertTagRequest(
+            Guid.NewGuid(),
+            "",
+            "Local.Recipe_DB.QYJRecipe[1].AutoSpeed",
+            "Local.Recipe_DB.QYJRecipe[1].AutoSpeed",
+            "Int32",
+            200,
+            300,
+            true,
+            true,
+            "Local");
+
+        var result = ScadaInputSanitizer.NormalizeTag(request);
+
+        Assert.Equal("Local.RecipeQYJ.AutoSpeed", result.DisplayName);
+        Assert.Equal("Local", result.GroupKey);
+        Assert.Equal(0, result.SamplingIntervalMs);
+        Assert.Equal(0, result.PublishingIntervalMs);
+    }
+
+    [Fact]
+    public void NormalizeTag_ForQyjRecipeVariableUnderscore_NormalizesToRecipeQYJ()
+    {
+        var request = new UpsertTagRequest(
+            Guid.NewGuid(),
+            "",
+            "Local.Recipe_DB_QYJRecipe[1]_AutoSpeed",
+            "Local.Recipe_DB_QYJRecipe[1]_AutoSpeed",
+            "Int32",
+            200,
+            300,
+            true,
+            true,
+            "Local");
+
+        var result = ScadaInputSanitizer.NormalizeTag(request);
+
+        Assert.Equal("Local.RecipeQYJ.AutoSpeed", result.DisplayName);
+        Assert.Equal("Local", result.GroupKey);
+        Assert.Equal(0, result.SamplingIntervalMs);
+        Assert.Equal(0, result.PublishingIntervalMs);
+    }
+
 
     [Fact]
     public void NormalizeTag_ForNonLocalGroup_RequiresNodeId()

@@ -1,3 +1,4 @@
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Scada.Api.Data;
@@ -140,5 +141,103 @@ public sealed class TagsController : ControllerBase
         var device = await _dbContext.Devices.FirstAsync(item => item.Id == tag.DeviceId, cancellationToken);
         var result = await _singleTagWriteCoordinator.WriteAsync(device, tag, request, cancellationToken);
         return Ok(result);
+    }
+
+    [HttpGet("export/local")]
+    public async Task<IActionResult> ExportLocalTags(CancellationToken cancellationToken)
+    {
+        var localGroupKeys = new[] { "Local", "Local Variable", "Device1_LocalVariable", "Local.RecipeDJ", "Local.RecipeQYJ" };
+        var tags = await _dbContext.Tags
+            .Where(item => localGroupKeys.Contains(item.GroupKey))
+            .OrderBy(item => item.DisplayName)
+            .ToListAsync(cancellationToken);
+
+        var csv = new StringBuilder();
+        csv.AppendLine("Id,DeviceId,DisplayName,BrowseName,NodeId,DataType,GroupKey,SamplingIntervalMs,PublishingIntervalMs,AllowWrite,Enabled");
+        foreach (var tag in tags)
+        {
+            csv.AppendLine($"{tag.Id},{tag.DeviceId},{EscapeCsv(tag.DisplayName)},{EscapeCsv(tag.BrowseName)},{EscapeCsv(tag.NodeId)},{tag.DataType},{tag.GroupKey},{tag.SamplingIntervalMs},{tag.PublishingIntervalMs},{tag.AllowWrite},{tag.Enabled}");
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(csv.ToString());
+        return File(bytes, "text/csv; charset=utf-8", $"local_tags_{DateTimeOffset.Now:yyyyMMdd_HHmmss}.csv");
+    }
+
+    [HttpPost("import/local")]
+    public async Task<ActionResult<TagImportResultDto>> ImportLocalTags([FromBody] TagImportRequest request, CancellationToken cancellationToken)
+    {
+        var total = request.Tags.Count;
+        var updated = 0;
+        var failed = 0;
+        var errors = new List<string>();
+        var localGroupKeys = new[] { "Local", "Local Variable", "Device1_LocalVariable", "Local.RecipeDJ", "Local.RecipeQYJ" };
+
+        foreach (var tagUpdate in request.Tags)
+        {
+            try
+            {
+                var entity = await _dbContext.Tags.FirstOrDefaultAsync(item => item.Id == tagUpdate.Id, cancellationToken);
+                if (entity is null)
+                {
+                    failed++;
+                    errors.Add($"Tag {tagUpdate.Id} not found");
+                    continue;
+                }
+
+                if (!localGroupKeys.Contains(entity.GroupKey))
+                {
+                    failed++;
+                    errors.Add($"Tag {tagUpdate.Id} is not a local variable");
+                    continue;
+                }
+
+                entity.DisplayName = tagUpdate.DisplayName;
+                entity.BrowseName = tagUpdate.BrowseName ?? tagUpdate.DisplayName;
+                if (!string.IsNullOrWhiteSpace(tagUpdate.NodeId))
+                {
+                    entity.NodeId = tagUpdate.NodeId;
+                }
+                if (!string.IsNullOrWhiteSpace(tagUpdate.DataType))
+                {
+                    entity.DataType = tagUpdate.DataType;
+                }
+                if (!string.IsNullOrWhiteSpace(tagUpdate.GroupKey))
+                {
+                    entity.GroupKey = tagUpdate.GroupKey;
+                }
+                entity.UpdatedAt = DateTimeOffset.UtcNow;
+
+                updated++;
+            }
+            catch (Exception ex)
+            {
+                failed++;
+                errors.Add($"Tag {tagUpdate.Id}: {ex.Message}");
+            }
+        }
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        foreach (var deviceId in request.Tags.Select(t => t.DeviceId).Distinct())
+        {
+            var device = await _dbContext.Devices.FirstOrDefaultAsync(item => item.Id == deviceId, cancellationToken);
+            if (device is not null)
+            {
+                var deviceTags = await _dbContext.Tags.Where(item => item.DeviceId == deviceId && item.Enabled).ToListAsync(cancellationToken);
+                await _runtimeCoordinator.RefreshSubscriptionsAsync(device, deviceTags, cancellationToken);
+            }
+        }
+
+        var result = new TagImportResultDto(total, updated, failed, errors);
+        return Ok(result);
+    }
+
+    private static string EscapeCsv(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return "";
+        if (value.Contains(',') || value.Contains('"') || value.Contains('\n'))
+            return $"\"{value.Replace("\"", "\"\"")}\"";
+        return value;
     }
 }

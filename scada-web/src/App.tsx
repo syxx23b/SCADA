@@ -4,10 +4,14 @@ import type { FormEvent, ReactNode } from 'react'
 import './App.css'
 import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, openVncTool, updateTag, writeTag } from './api'
 import type { BrowseNode, DeviceConnection, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
+import { RecipeDJ } from './components/RecipeDJ'
+import { RecipeQYJ } from './components/RecipeQYJ'
 
-type ViewKey = 'dashboard' | 'runtime' | 'tags' | 'help' | 'login'
+type ViewKey = 'dashboard' | 'runtime' | 'tags' | 'recipeDj' | 'recipeQyj' | 'help' | 'login'
 type SidebarKey = ViewKey | 'report'
+type RecipeTypeKey = 'DJRecipe' | 'QYJRecipe'
 type RuntimeStatus = { label: '正常' | '异常'; className: 'normal' | 'fault' }
+
 type HistoryPoint = { ts: number; value: number }
 type DashboardField = { tag?: TagDefinition; snapshot?: TagSnapshot; healthy: boolean; numeric: number | null; text: string; emptyText: string }
 type FaceplateTrend = { pressure: HistoryPoint[]; flow: HistoryPoint[] }
@@ -15,6 +19,8 @@ type SidebarItem = { key: SidebarKey; label: string; icon: string }
 
 const baseSidebarItems: SidebarItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '◉' },
+  { key: 'recipeDj', label: '配方-电机泵', icon: '◆' },
+  { key: 'recipeQyj', label: '配方-汽油机', icon: '◇' },
   { key: 'report', label: 'Report', icon: '◌' },
   { key: 'help', label: 'Help', icon: '◇' },
 ]
@@ -23,13 +29,15 @@ const protectedSidebarItems: SidebarItem[] = [
   { key: 'runtime', label: '标签', icon: '▲' },
   { key: 'tags', label: '订阅', icon: '▣' },
 ]
+
 const dashboardFaceplateIndexes = [1, 2] as const
 
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'batch') return 'tags'
-  return value === 'dashboard' || value === 'runtime' || value === 'tags' || value === 'help' || value === 'login' ? value : 'dashboard'
+  return value === 'dashboard' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'help' || value === 'login' ? value : 'dashboard'
 }
+
 
 function getDisplayName(nodeId: string) {
   let value = nodeId
@@ -41,21 +49,133 @@ function getDisplayName(nodeId: string) {
   return value || nodeId
 }
 
+function normalizeLocalRecipeDisplayName(value: string) {
+  const trimmed = value.trim()
+
+  // RecipeName patterns (dot and underscore versions)
+  const recipeNameMatch = trimmed.match(/^Local\.Recipe_DB\.RecipeName(\[\d+\])$/i)
+  if (recipeNameMatch) return `Local.RecipeName${recipeNameMatch[1]}`
+
+  const recipeNameUnderscoreMatch = trimmed.match(/^Local\.Recipe_DB_RecipeName(\[\d+\])$/i)
+  if (recipeNameUnderscoreMatch) return `Local.RecipeName${recipeNameUnderscoreMatch[1]}`
+
+  // DJRecipe patterns (dot and underscore versions)
+  const djMatch = trimmed.match(/^Local\.Recipe_DB\.DJRecipe(?:\[\d+\])?\.(.+)$/i)
+  if (djMatch) return `Local.RecipeDJ.${djMatch[1].trim()}`
+
+  const djUnderscoreMatch = trimmed.match(/^Local\.Recipe_DB_DJRecipe(?:\[\d+\])?_(.+)$/i)
+  if (djUnderscoreMatch) return `Local.RecipeDJ.${djUnderscoreMatch[1].trim()}`
+
+  // QYJ/QYI Recipe patterns (dot and underscore versions)
+  const qyjMatch = trimmed.match(/^Local\.Recipe_DB\.(?:QYJRecipe|QYIRecipe)(?:\[\d+\])?\.(.+)$/i)
+  if (qyjMatch) return `Local.RecipeQYJ.${qyjMatch[1].trim()}`
+
+  const qyjUnderscoreMatch = trimmed.match(/^Local\.Recipe_DB_(?:QYJRecipe|QYIRecipe)(?:\[\d+\])?_(.+)$/i)
+  if (qyjUnderscoreMatch) return `Local.RecipeQYJ.${qyjUnderscoreMatch[1].trim()}`
+
+  // Plain Local variables (non-Recipe) -> RecipeDJ
+  const plainMatch = trimmed.match(/^Local\.([^.]+)(?:\.[^.]+)*$/i)
+  if (plainMatch && !trimmed.toLowerCase().startsWith('local.recipe')) {
+    return `Local.RecipeDJ.${plainMatch[1].trim()}`
+  }
+
+  return trimmed
+}
+
+function resolveLocalRecipeGroupFromDisplay(_value?: string) {
+  return 'Local'
+}
+
 function getResolvedGroup(deviceName: string, tag: TagDefinition) {
   const recipeRule = resolveRecipeRule(tag.nodeId)
   if (recipeRule) return recipeRule.groupKey
+
   const explicit = tag.groupKey?.trim()
+  if (isLocalVariableGroup(explicit)) {
+    return resolveLocalRecipeGroupFromDisplay(tag.displayName) ?? explicit ?? 'Local Variable'
+  }
+
   if (explicit) return explicit
   const match = getDisplayName(tag.nodeId).match(/HMI_DB\.(?:HMI_Faceplates|Faceplates)\[(\d+)\]/i)
   return match ? `${deviceName}_HMI${match[1]}` : '未分组'
 }
 
 function isLocalVariableGroup(groupKey: string | null | undefined) {
-  return (groupKey ?? '').trim().toLowerCase() === 'local variable'
+  const normalized = (groupKey ?? '').trim().toLowerCase()
+  return normalized === 'local' ||
+    normalized === 'local variable' ||
+    normalized === 'device1_localvariable' ||
+    normalized === 'local.recipedj' ||
+    normalized === 'local.recipeqyj'
 }
 
 function isLocalVariableTag(tag: TagDefinition) {
   return isLocalVariableGroup(tag.groupKey)
+}
+
+function isLocalRecipeScopedTag(tag: TagDefinition) {
+  if (isLocalVariableGroup(tag.groupKey)) return true
+
+  const candidates = [tag.displayName, tag.browseName, getDisplayName(tag.nodeId)]
+  return candidates.some((rawValue) => {
+    const value = (rawValue ?? '').trim()
+    return /^Local\./i.test(value) || /^LocalVariable\./i.test(value)
+  })
+}
+
+function detectLocalRecipeType(tag: TagDefinition): RecipeTypeKey | null {
+  const candidates = [tag.displayName, tag.browseName, getDisplayName(tag.nodeId)]
+
+  for (const rawValue of candidates) {
+    const value = (rawValue ?? '').trim()
+    if (!value) continue
+
+    if (
+      /^Local\.RecipeDJ\./i.test(value) ||
+      /^Local\.Recipe_DB\.DJRecipe(?:\[\d+\])?\./i.test(value) ||
+      /^Local\.Recipe_DB_DJRecipe(?:\[\d+\])?_/i.test(value) ||
+      /^LocalVariable\.DJRecipe\./i.test(value)
+    ) {
+      return 'DJRecipe'
+    }
+
+    if (
+      /^Local\.RecipeQYJ\./i.test(value) ||
+      /^Local\.Recipe_DB\.(?:QYJRecipe|QYIRecipe)(?:\[\d+\])?\./i.test(value) ||
+      /^Local\.Recipe_DB_(?:QYJRecipe|QYIRecipe)(?:\[\d+\])?_/i.test(value) ||
+      /^LocalVariable\.QYJRecipe\./i.test(value)
+    ) {
+      return 'QYJRecipe'
+    }
+  }
+
+  return null
+}
+
+function isPrimaryLocalRecipeNameTag(tag: TagDefinition) {
+  if (!isLocalRecipeScopedTag(tag)) return false
+
+  const candidates = [tag.displayName, tag.browseName, getDisplayName(tag.nodeId)]
+  return candidates.some((rawValue) => {
+    const value = (rawValue ?? '').trim()
+    if (!value) return false
+    return /^Local\.RecipeName$/i.test(value) ||
+      /^Local\.Recipe_DB\.RecipeName$/i.test(value) ||
+      /^Local\.Recipe_DB_RecipeName$/i.test(value) ||
+      /^LocalVariable\.RecipeName$/i.test(value)
+  })
+}
+
+function isLocalRecipeNameTag(tag: TagDefinition) {
+  if (!isLocalRecipeScopedTag(tag)) return false
+
+  const candidates = [tag.displayName, tag.browseName, getDisplayName(tag.nodeId)]
+  return candidates.some((rawValue) => {
+    const value = (rawValue ?? '').trim()
+    if (!value) return false
+    return /^Local\.(?:RecipeName|Recipe_DB\.RecipeName|Recipe_DB_RecipeName)(?:\[\d+\])?$/i.test(value) ||
+      /^LocalVariable\.RecipeName(?:\[\d+\])?$/i.test(value)
+  })
 }
 
 function statusOf(tag: TagDefinition, snapshot: TagSnapshot | undefined, deviceStatus: string | undefined): RuntimeStatus {
@@ -431,8 +551,10 @@ function App() {
     return selectedDeviceTags.filter((tag) => getResolvedGroup(activeDeviceName, tag) === selectedTagGroupFilter)
   }, [activeDeviceName, selectedDeviceTags, selectedTagGroupFilter])
   const batchRows = batchDrafts
+  const activeRecipeType: RecipeTypeKey = view === 'recipeQyj' ? 'QYJRecipe' : 'DJRecipe'
   const sidebarItems = useMemo(() => (isAuthenticated ? [...baseSidebarItems, ...protectedSidebarItems] : baseSidebarItems), [isAuthenticated])
   const groups = useMemo(() => {
+
     const unique = new Set<string>(['all'])
     for (const tag of runtime.tags) unique.add(getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag))
     return Array.from(unique)
@@ -657,12 +779,12 @@ function App() {
     })
 
     return [...tags].sort((left, right) => {
-      const leftGroup = getResolvedGroup(runtimeNameById[left.deviceId] ?? '', left)
-      const rightGroup = getResolvedGroup(runtimeNameById[right.deviceId] ?? '', right)
-      const groupCompare = leftGroup.localeCompare(rightGroup, 'zh-CN', { numeric: true, sensitivity: 'base' })
-      if (groupCompare !== 0) return groupCompare
+      const leftName = (left.displayName || left.browseName || getDisplayName(left.nodeId)).trim()
+      const rightName = (right.displayName || right.browseName || getDisplayName(right.nodeId)).trim()
+      const nameCompare = leftName.localeCompare(rightName, 'zh-CN', { numeric: true, sensitivity: 'base' })
+      if (nameCompare !== 0) return nameCompare
 
-      return getDisplayName(left.nodeId).localeCompare(getDisplayName(right.nodeId), 'zh-CN', { numeric: true, sensitivity: 'base' })
+      return left.nodeId.localeCompare(right.nodeId, 'zh-CN', { numeric: true, sensitivity: 'base' })
     })
   }, [groupFilter, runtime.tags, runtimeNameById])
 
@@ -685,7 +807,36 @@ function App() {
     })
   }, [filteredRuntimeTags, runtimeDeviceStatusById, runtimeNameById, snapshotByTagId])
 
+  const recipeRows = useMemo(() => {
+    const source = runtime.tags.filter((tag) => isLocalRecipeScopedTag(tag) && detectLocalRecipeType(tag) === activeRecipeType)
+
+
+    return source.map((tag, index) => {
+      const snapshot = snapshotByTagId.get(tag.id)
+      const deviceStatus = runtimeDeviceStatusById[tag.deviceId]
+      const stat = statusOf(tag, snapshot, deviceStatus)
+      const group = getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag)
+      const currentValue = stat.className === 'normal' ? formatValue(tag, snapshot, deviceStatus) : '暂无数据'
+      return {
+        index: index + 1,
+        tag,
+        stat,
+        group,
+        currentValue,
+        time: compactTimeText(snapshot),
+      }
+    })
+  }, [activeRecipeType, runtime.tags, runtimeDeviceStatusById, runtimeNameById, snapshotByTagId])
+
+  const activeRecipeNameTag = useMemo(() => {
+    const primary = runtime.tags.find((tag) => isPrimaryLocalRecipeNameTag(tag))
+    if (primary) return primary
+
+    return runtime.tags.find((tag) => isLocalRecipeNameTag(tag)) ?? null
+  }, [runtime.tags])
+
   const deviceStatusCards = useMemo(() => {
+
     return runtime.devices.map((runtimeDevice) => {
       const device = devices.find((d) => d.id === runtimeDevice.deviceId)
       const runtimeStatus = runtimeDevice.status
@@ -815,9 +966,10 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated && (view === 'runtime' || view === 'tags')) {
       setView('login')
-      setStatusMessage('请先登录后再访问标签与订阅')
+      setStatusMessage('请先登录后再访问标签、订阅页面')
     }
   }, [isAuthenticated, view])
+
   useEffect(() => {
     if (!activeDeviceId) return
     setExpandedBrowseNodes({})
@@ -832,12 +984,12 @@ function App() {
     })
   }
 
-  async function handleWrite(tagId: string) {
-    const value = writeDrafts[tagId]
-    if (value === undefined || value.trim() === '') return setStatusMessage('请输入要写入的值')
+  async function handleWrite(tagId: string, value?: string) {
+    const valueToWrite = value ?? writeDrafts[tagId]
+    if (valueToWrite === undefined || valueToWrite.trim() === '') return setStatusMessage('请输入要写入的值')
     try {
       setSavingTagId(tagId)
-      await writeTag(tagId, value)
+      await writeTag(tagId, valueToWrite)
       setWriteDrafts((current) => ({ ...current, [tagId]: '' }))
       setStatusMessage('写入成功')
       await refreshRuntime()
@@ -892,15 +1044,18 @@ function App() {
       const groupKey = row.groupKey?.trim() || '未分组'
       const isLocal = isLocalVariableGroup(groupKey)
       const recipeRule = resolveRecipeRule(row.nodeId)
+      const normalizedLocalDisplayName = normalizeLocalRecipeDisplayName(row.displayName.trim() || getDisplayName(row.nodeId) || 'Local Variable')
+      const localRecipeGroup = resolveLocalRecipeGroupFromDisplay(normalizedLocalDisplayName)
       return {
         ...row,
-        displayName: row.displayName.trim() || getDisplayName(row.nodeId) || 'Local Variable',
-        groupKey: isLocal ? 'Local Variable' : (recipeRule?.groupKey || groupKey),
+        displayName: isLocal ? normalizedLocalDisplayName : (row.displayName.trim() || getDisplayName(row.nodeId) || 'Local Variable'),
+        groupKey: isLocal ? (localRecipeGroup ?? 'Local Variable') : (recipeRule?.groupKey || groupKey),
         nodeId: isLocal ? (row.nodeId.startsWith('local://') ? row.nodeId : '') : row.nodeId,
         samplingIntervalMs: isLocal ? 0 : (recipeRule?.intervalMs || row.samplingIntervalMs || 200),
         publishingIntervalMs: isLocal ? 0 : (recipeRule?.intervalMs || row.publishingIntervalMs || 200),
         enabled: true,
       }
+
     }))
     setStatusMessage('默认规则已应用')
   }
@@ -914,16 +1069,19 @@ function App() {
         const groupKey = row.groupKey?.trim() || '未分组'
         const isLocal = isLocalVariableGroup(groupKey)
         const recipeRule = resolveRecipeRule(row.nodeId)
+        const normalizedLocalDisplayName = normalizeLocalRecipeDisplayName(row.displayName.trim() || getDisplayName(row.nodeId) || 'Local Variable')
+        const localRecipeGroup = resolveLocalRecipeGroupFromDisplay(normalizedLocalDisplayName)
         const payload: TagFormState = {
           ...row,
           nodeId: isLocal ? (row.nodeId.startsWith('local://') ? row.nodeId : '') : row.nodeId,
-          displayName: row.displayName.trim() || getDisplayName(row.nodeId) || 'Local Variable',
-          groupKey: isLocal ? 'Local Variable' : (recipeRule?.groupKey || groupKey),
+          displayName: isLocal ? normalizedLocalDisplayName : (row.displayName.trim() || getDisplayName(row.nodeId) || 'Local Variable'),
+          groupKey: isLocal ? (localRecipeGroup ?? 'Local Variable') : (recipeRule?.groupKey || groupKey),
           samplingIntervalMs: isLocal ? 0 : (recipeRule?.intervalMs || Number(row.samplingIntervalMs) || 200),
           publishingIntervalMs: isLocal ? 0 : (recipeRule?.intervalMs || Number(row.publishingIntervalMs) || 200),
           allowWrite: Boolean(row.allowWrite),
           enabled: Boolean(row.enabled),
         }
+
         if (row.id) await updateTag(row.id, payload); else await createTag(payload)
       }
       await loadWorkspace(); await refreshRuntime(); setBatchDrafts([]); setSelectedBrowseNodes([]); setStatusMessage('批量保存成功，列表已清空')
@@ -950,6 +1108,8 @@ function App() {
   }
   async function removeRuntimeTag(id: string) { try { await deleteTag(id); await loadWorkspace(); await refreshRuntime(); setStatusMessage('订阅变量已删除') } catch (error) { setStatusMessage(error instanceof Error ? error.message : '删除失败') } }
 
+
+
   function handleSidebarClick(key: SidebarKey) {
     if (key === 'report') {
       const popup = window.open('http://localhost:8080/webroot/decision', '_blank', 'noopener,noreferrer')
@@ -959,9 +1119,10 @@ function App() {
 
     if (!isAuthenticated && (key === 'runtime' || key === 'tags')) {
       setView('login')
-      setStatusMessage('请先登录后再访问标签与订阅')
+      setStatusMessage('请先登录后再访问标签、订阅页面')
       return
     }
+
 
     setView(key)
   }
@@ -1106,8 +1267,9 @@ function App() {
             <table className="runtime-table project-table">
               <colgroup>
                 <col style={{ width: '54px' }} />
-                <col style={{ width: '360px' }} />
+                <col style={{ width: '320px' }} />
                 <col style={{ width: '92px' }} />
+                <col style={{ width: '106px' }} />
                 <col style={{ width: '86px' }} />
                 <col style={{ width: '164px' }} />
                 <col style={{ width: '136px' }} />
@@ -1121,6 +1283,7 @@ function App() {
                   <th>Risk</th>
                   <th>变量名称</th>
                   <th>当前值</th>
+                  <th>数据类型</th>
                   <th>状态</th>
                   <th>最新时间</th>
                   <th>
@@ -1150,6 +1313,7 @@ function App() {
                       <td>
                         <div className="project-value">{displayValue}</div>
                       </td>
+                      <td>{tag.dataType || '-'}</td>
                       <td>
                         <span className={`project-status ${stat.className === 'normal' ? 'green' : 'red'}`}>
                           <span className="dot" />
@@ -1611,8 +1775,42 @@ function App() {
     </section>
   )
 
+  const recipePage = (
+    <section className="page-shell recipe-page-shell">
+      <header className="page-header recipe-header">
+        <div className="page-copy">
+          <h1>{activeRecipeType === 'QYJRecipe' ? '配方-汽油机' : '配方-电机泵'}</h1>
+          <p>{activeRecipeType === 'QYJRecipe' ? '汽油机配方参数配置与管理' : '电机泵配方参数配置与管理'}</p>
+        </div>
+      </header>
+
+      <section className="content-strip recipe-content">
+        {activeRecipeType === 'DJRecipe' ? (
+          <RecipeDJ
+            tags={recipeRows.map(r => r.tag)}
+            recipeNameTag={activeRecipeNameTag}
+            snapshots={snapshotByTagId}
+            onWrite={(tagId, value) => void handleWrite(tagId, value)}
+            savingTagId={savingTagId}
+          />
+        ) : (
+          <RecipeQYJ
+            tags={recipeRows.map(r => r.tag)}
+            recipeNameTag={activeRecipeNameTag}
+            snapshots={snapshotByTagId}
+            onWrite={(tagId, value) => void handleWrite(tagId, value)}
+            savingTagId={savingTagId}
+          />
+        )}
+      </section>
+
+      <div className="toast-line">{statusMessage}</div>
+    </section>
+  )
+
   const helpPage = (
     <section className="page-shell">
+
       <header className="page-header">
         <div className="page-copy">
           <h1>帮助文档</h1>
@@ -1685,7 +1883,10 @@ function App() {
 
   if (view === 'dashboard') return <div className="app-shell">{sidebarShell}<main className="workspace">{dashboardPage}</main></div>
   if (view === 'runtime') return isAuthenticated ? runtimePage : <div className="app-shell">{sidebarShell}<main className="workspace">{loginPage}</main></div>
-  return <div className="app-shell">{sidebarShell}<main className="workspace">{view === 'tags' ? (isAuthenticated ? tagsPage : loginPage) : view === 'help' ? helpPage : loginPage}</main></div>
+  if (view === 'tags') return <div className="app-shell">{sidebarShell}<main className="workspace">{isAuthenticated ? tagsPage : loginPage}</main></div>
+  if (view === 'recipeDj' || view === 'recipeQyj') return <div className="app-shell">{sidebarShell}<main className="workspace">{recipePage}</main></div>
+  return <div className="app-shell">{sidebarShell}<main className="workspace">{view === 'help' ? helpPage : loginPage}</main></div>
 }
+
 
 export default App
