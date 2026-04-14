@@ -8,9 +8,11 @@ scada-web/dist/
 
 # Runtime data and logs
 *.log
-*.db
 *.db-shm
 *.db-wal
+*.db.before-*.bak
+*.db.before-*.bak-shm
+*.db.before-*.bak-wal
 .runlogs/
 
 # Local package/cache folders
