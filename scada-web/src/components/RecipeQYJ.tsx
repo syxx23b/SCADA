@@ -380,13 +380,28 @@ function ValueEditor({
     )
   }
 
+  const isIntegerType = /int|integer|long|short|byte/i.test(tag.dataType)
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    let value = event.target.value
+    if (isIntegerType) {
+      // 整数类型：只允许数字和负号，禁止小数点
+      value = value.replace(/[^\d-]/g, '')
+      // 确保负号只能在开头
+      const parts = value.split('-')
+      if (parts.length > 1) {
+        value = (parts[0] ? '' : '-') + parts.join('').replace(/-/g, '')
+      }
+    }
+    setDraft(value)
+  }
+
   return (
     <div className="recipe-editor recipe-editor-inline">
       <input
         className="recipe-editor-input"
         value={draft}
         disabled={disabled}
-        onChange={(event) => setDraft(event.target.value)}
+        onChange={handleChange}
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
