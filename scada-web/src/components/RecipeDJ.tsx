@@ -199,6 +199,11 @@ const DJ_FIELD_META: Record<string, FieldMeta> = {
 }
 
 const DJ_FIELD_PATTERNS = [
+  /^Local\.recipeName$/i,
+  /^Local\.RecipeName$/i,
+  /^Local\.Recipe_DB\.RecipeName$/i,
+  /^Local\.Recipe_DB_RecipeName$/i,
+  /^LocalVariable\.RecipeName$/i,
   /^Local\.RecipeDJ\.(.+)$/i,
   /^Local\.Recipe_DB\.DJRecipe(?:\[\d+\])?\.(.+)$/i,
   /^Local\.Recipe_DB_DJRecipe(?:\[\d+\])?_(.+)$/i,
@@ -216,7 +221,11 @@ function extractFieldKey(tag: TagDefinition) {
 
     for (const pattern of DJ_FIELD_PATTERNS) {
       const match = value.match(pattern)
-      if (match) return match[1].trim().replace(/^_+/, '')
+      if (match) {
+        // 对于 recipeName 模式，没有捕获组，直接返回 'recipeName'
+        if (match[1] === undefined) return 'recipeName'
+        return match[1].trim().replace(/^_+/, '')
+      }
     }
   }
 

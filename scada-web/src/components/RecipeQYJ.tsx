@@ -165,6 +165,11 @@ const QYJ_FIELD_META: Record<string, FieldMeta> = {
 }
 
 const QYJ_FIELD_PATTERNS = [
+  /^Local\.recipeName$/i,
+  /^Local\.RecipeName$/i,
+  /^Local\.Recipe_DB\.RecipeName$/i,
+  /^Local\.Recipe_DB_RecipeName$/i,
+  /^LocalVariable\.RecipeName$/i,
   /^Local\.RecipeQYJ\.(.+)$/i,
   /^Local\.Recipe_DB\.(?:QYJRecipe|QYIRecipe)(?:\[\d+\])?\.(.+)$/i,
   /^Local\.Recipe_DB_(?:QYJRecipe|QYIRecipe)(?:\[\d+\])?_(.+)$/i,
@@ -180,7 +185,11 @@ function extractFieldKey(tag: TagDefinition) {
 
     for (const pattern of QYJ_FIELD_PATTERNS) {
       const match = value.match(pattern)
-      if (match) return match[1].trim().replace(/^_+/, '')
+      if (match) {
+        // 对于 recipeName 模式，没有捕获组，直接返回 'recipeName'
+        if (match[1] === undefined) return 'recipeName'
+        return match[1].trim().replace(/^_+/, '')
+      }
     }
   }
 
