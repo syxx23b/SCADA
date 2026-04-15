@@ -51,6 +51,15 @@ var app = builder.Build();
 
 app.Logger.LogInformation("Using SQLite database at {DatabasePath}", new SqliteConnectionStringBuilder(scadaConnectionString).DataSource);
 
+// 确保数据库及配方表已创建
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<ScadaDbContext>();
+    dbContext.Database.EnsureCreated();
+    EnsureRecipeTables(dbContext);
+    app.Logger.LogInformation("Database initialized successfully");
+}
+
 app.UseCors();
 
 app.UseAuthorization();
@@ -86,5 +95,32 @@ static string ResolveSqliteConnectionString(string connectionString, string base
     return builder.ToString();
 }
 
+static void EnsureRecipeTables(ScadaDbContext dbContext)
+{
+    dbContext.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS Recipes (
+            Id TEXT NOT NULL CONSTRAINT PK_Recipes PRIMARY KEY,
+            Name TEXT NOT NULL,
+            Description TEXT NOT NULL,
+            RecipeType TEXT NOT NULL,
+            CreatedAt TEXT NOT NULL,
+            UpdatedAt TEXT NOT NULL
+        );
+        """);
+
+    dbContext.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS RecipeItems (
+            Id TEXT NOT NULL CONSTRAINT PK_RecipeItems PRIMARY KEY,
+            RecipeId TEXT NOT NULL,
+            TagId TEXT NOT NULL,
+            FieldKey TEXT NOT NULL,
+            Value TEXT NOT NULL,
+            CONSTRAINT FK_RecipeItems_Recipes_RecipeId FOREIGN KEY (RecipeId) REFERENCES Recipes (Id) ON DELETE CASCADE
+        );
+        """);
+
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_Recipes_RecipeType ON Recipes (RecipeType);");
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_RecipeItems_RecipeId_FieldKey ON RecipeItems (RecipeId, FieldKey);");
+}
 
 public partial class Program;

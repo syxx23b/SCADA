@@ -16,6 +16,10 @@ public sealed class ScadaDbContext : DbContext
 
     public DbSet<WriteAuditEntity> WriteAudits => Set<WriteAuditEntity>();
 
+    public DbSet<RecipeEntity> Recipes => Set<RecipeEntity>();
+
+    public DbSet<RecipeItemEntity> RecipeItems => Set<RecipeItemEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DeviceConnectionEntity>(entity =>
@@ -52,6 +56,27 @@ public sealed class ScadaDbContext : DbContext
             entity.Property(item => item.PreviousValue).HasMaxLength(4000);
             entity.Property(item => item.Result).HasMaxLength(64).IsRequired();
             entity.Property(item => item.Message).HasMaxLength(1000);
+        });
+
+        modelBuilder.Entity<RecipeEntity>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Name).HasMaxLength(200).IsRequired();
+            entity.Property(item => item.Description).HasMaxLength(500);
+            entity.Property(item => item.RecipeType).HasMaxLength(32).IsRequired();
+            entity.HasIndex(item => item.RecipeType);
+            entity.HasMany(item => item.Items)
+                .WithOne(item => item.Recipe)
+                .HasForeignKey(item => item.RecipeId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<RecipeItemEntity>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.FieldKey).HasMaxLength(128).IsRequired();
+            entity.Property(item => item.Value).HasMaxLength(4000).IsRequired();
+            entity.HasIndex(item => new { item.RecipeId, item.FieldKey });
         });
     }
 }

@@ -2,13 +2,29 @@ import { useEffect, useMemo, useState } from 'react'
 import type { TagDefinition, TagSnapshot } from '../types'
 import './Recipe.css'
 
+interface RecipeFile {
+  id: string
+  name: string
+  createdAt: string
+  updatedAt: string
+}
+
 interface RecipeDJProps {
   tags: TagDefinition[]
-  recipeNameTag?: TagDefinition | null
   snapshots: Map<string, TagSnapshot>
   onWrite: (tagId: string, value: string) => void
   savingTagId: string | null
+  savedRecipes: RecipeFile[]
+  onSaveRecipe: (recipeName: string, recipeData: Record<string, string>) => Promise<boolean>
+  onLoadRecipe: (recipeId: string) => Promise<boolean>
+  onDeleteRecipe: (recipeId: string) => Promise<boolean>
+  loadedRecipeName?: string
+  showRecipe1SyncButton: boolean
+  showRecipe2SyncButton: boolean
+  recipe1SyncLabel: string
+  recipe2SyncLabel: string
 }
+
 
 type RecipeRow = {
   tag: TagDefinition
@@ -162,11 +178,11 @@ const DJ_FIELD_META: Record<string, FieldMeta> = {
   self_priming: { label: '自吸能力', unit: 'KPa', group: '出厂测试' },
   self_primingtime: { label: '自吸时间', unit: 's', group: '出厂测试' },
   dcholdingpoweroff: { label: '关枪断电', unit: '', group: '全局设置' },
-  endurancetime: { label: '耐久时间', unit: 'h', group: '耐久测试' },
+  endurancetime: { label: '耐久时间', unit: '小时', group: '耐久测试' },
   endurancetriggerontime: { label: '耐久开枪时间', unit: 's', group: '耐久测试' },
   endurancetriggerofftime: { label: '耐久关枪时间', unit: 's', group: '耐久测试' },
   enduranceinletmonitor: { label: '水压监控', unit: 'Bar', group: '耐久测试' },
-  datauploadfrequency: { label: '保存频率', unit: 'Min', group: '耐久测试' },
+  datauploadfrequency: { label: '保存频率', unit: '分钟', group: '耐久测试' },
   pressureholdinginterval: { label: '保压间隔', unit: '次', group: '耐久测试' },
   pressuremin: { label: '工作压力下限', unit: 'MPa', group: '泵头性能' },
   pressuremax: { label: '工作压力上限', unit: 'MPa', group: '泵头性能' },
@@ -215,11 +231,22 @@ function findTagByFieldKey(tags: TagDefinition[], fieldKey: string) {
   return tags.find((tag) => extractFieldKey(tag)?.toLowerCase() === fieldKey.toLowerCase()) ?? null
 }
 
+function normalizeNumericText(rawValue: string) {
+  const trimmed = rawValue.trim()
+  const match = trimmed.match(/^([+-]?)(\d+)(\.\d+)?$/)
+  if (!match) return trimmed
+
+  const [, sign, integerPart, decimalPart = ''] = match
+  const normalizedIntegerPart = integerPart.replace(/^0+(?=\d)/, '')
+  return `${sign}${normalizedIntegerPart}${decimalPart}`
+}
+
 function getSnapshotRawValue(snapshot: TagSnapshot | undefined) {
   if (snapshot?.value === null || snapshot?.value === undefined || snapshot.value === '') return ''
   if (typeof snapshot.value === 'boolean') return snapshot.value ? '1' : '0'
-  return String(snapshot.value).trim()
+  return normalizeNumericText(String(snapshot.value))
 }
+
 
 function inferGroup(fieldKey: string) {
   return getFieldMeta(fieldKey)?.group ?? '其他参数'
@@ -236,7 +263,7 @@ function inferUnit(fieldKey: string, dataType: string) {
   if (key.includes('flow')) return 'L/M'
   if (key.includes('current')) return 'A'
   if (key.includes('frequency')) return 'Hz'
-  if (key.includes('time')) return 's'
+  if (key.includes('time')) return '秒'
   if (key.includes('count') || key.includes('interval')) return '次'
   if (key.includes('barcodelength')) return '位'
   return ''
@@ -263,7 +290,7 @@ function resolveDictionaryValue(fieldKey: string, valueText: string) {
   if (!options) return valueText
 
   const key = fieldKey.toLowerCase()
-  const raw = valueText.trim()
+  const raw = normalizeNumericText(valueText)
   const normalized = key === 'dcholdingpoweroff' ? normalizeDcHoldingPowerOffValue(raw) : raw
   if (!normalized || normalized === '—') return options[0].value
 
@@ -275,13 +302,14 @@ function resolveDictionaryValue(fieldKey: string, valueText: string) {
 }
 
 
+
 function formatSnapshotValue(fieldKey: string, tag: TagDefinition, snapshot: TagSnapshot | undefined) {
   const options = getFieldOptions(fieldKey)
   if (options) {
     const key = fieldKey.toLowerCase()
     const rawValue = snapshot?.value === null || snapshot?.value === undefined || snapshot.value === ''
       ? options[0].value
-      : String(snapshot.value).trim()
+      : normalizeNumericText(String(snapshot.value))
     const normalizedValue = key === 'dcholdingpoweroff' ? normalizeDcHoldingPowerOffValue(rawValue) : rawValue
     return options.find((item) => item.value === normalizedValue)?.label ?? normalizedValue
   }
@@ -293,8 +321,9 @@ function formatSnapshotValue(fieldKey: string, tag: TagDefinition, snapshot: Tag
     return String(snapshot.value)
   }
   if (typeof snapshot.value === 'boolean') return snapshot.value ? 'True' : 'False'
-  return String(snapshot.value)
+  return fieldKey.toLowerCase() === 'recipename' ? String(snapshot.value).trim() : normalizeNumericText(String(snapshot.value))
 }
+
 
 function formatTimestamp(snapshot: TagSnapshot | undefined) {
   if (!snapshot?.sourceTimestamp) return '—'
@@ -346,10 +375,14 @@ function ValueEditor({
 
   const disabled = savingTagId === tag.id
   const commit = () => {
-    const nextValue = draft.trim()
+    const nextValue = fieldKey.toLowerCase() === 'recipename' ? draft.trim() : normalizeNumericText(draft)
+    if (nextValue !== draft) {
+      setDraft(nextValue)
+    }
     if (disabled || nextValue === '' || nextValue === currentValue.trim()) return
     onWrite(tag.id, nextValue)
   }
+
 
   if (options) {
     if (options.length === 2) {
@@ -428,12 +461,125 @@ function ValueEditor({
   )
 }
 
-export function RecipeDJ({ tags, recipeNameTag, snapshots, onWrite, savingTagId }: RecipeDJProps) {
+export function RecipeDJ({
+  tags,
+  snapshots,
+  onWrite,
+  savingTagId,
+  savedRecipes,
+  onSaveRecipe,
+  onLoadRecipe,
+  onDeleteRecipe,
+  loadedRecipeName,
+  showRecipe1SyncButton,
+  showRecipe2SyncButton,
+  recipe1SyncLabel,
+  recipe2SyncLabel,
+}: RecipeDJProps) {
   const motorTypeTag = useMemo(() => findTagByFieldKey(tags, 'motorType'), [tags])
   const dcHoldingPowerOffTag = useMemo(() => findTagByFieldKey(tags, 'dcHoldingPowerOff'), [tags])
   const motorTypeSnapshot = motorTypeTag ? getSnapshotOrSimulated(motorTypeTag, 'motorType', snapshots) : undefined
   const motorTypeValue = motorTypeTag ? getSnapshotRawValue(motorTypeSnapshot) : ''
   const shouldShowDcHoldingPowerOff = motorTypeValue === '2'
+
+  // 配方名称输入框状态（独立于型号标签）
+  const [recipeFileName, setRecipeFileName] = useState('')
+
+  // 选中的配方ID
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string>('')
+
+  // 反馈消息状态
+  const [feedbackMessage, setFeedbackMessage] = useState<string>('')
+  const [deletingRecipeId, setDeletingRecipeId] = useState<string | null>(null)
+  const [pendingDeleteRecipeId, setPendingDeleteRecipeId] = useState<string | null>(null)
+
+
+
+  // 当加载或清空配方时同步更新输入框
+  useEffect(() => {
+    setRecipeFileName(loadedRecipeName ?? '')
+  }, [loadedRecipeName])
+
+  useEffect(() => {
+    if (selectedRecipeId && !savedRecipes.some((recipe) => recipe.id === selectedRecipeId)) {
+      setSelectedRecipeId('')
+    }
+
+    if (pendingDeleteRecipeId && !savedRecipes.some((recipe) => recipe.id === pendingDeleteRecipeId)) {
+      setPendingDeleteRecipeId(null)
+    }
+  }, [pendingDeleteRecipeId, savedRecipes, selectedRecipeId])
+
+  useEffect(() => {
+    if (pendingDeleteRecipeId && pendingDeleteRecipeId !== selectedRecipeId) {
+      setPendingDeleteRecipeId(null)
+    }
+  }, [pendingDeleteRecipeId, selectedRecipeId])
+
+
+  // 显示反馈消息
+
+  const showFeedback = (message: string) => {
+    setFeedbackMessage(message)
+    setTimeout(() => setFeedbackMessage(''), 3000)
+  }
+
+  const handleNewRecipe = () => {
+    setRecipeFileName('')
+    setSelectedRecipeId('')
+    setPendingDeleteRecipeId(null)
+    showFeedback('已新建配方')
+  }
+
+  const handleLoadRecipe = async () => {
+    if (selectedRecipeId) {
+      setPendingDeleteRecipeId(null)
+      const succeeded = await onLoadRecipe(selectedRecipeId)
+      const recipe = savedRecipes.find(r => r.id === selectedRecipeId)
+      if (succeeded && recipe) {
+        showFeedback(`已加载配方: ${recipe.name}`)
+      }
+    }
+  }
+
+  const handleDeleteRecipe = async () => {
+    if (!selectedRecipeId) {
+      return
+    }
+
+    if (pendingDeleteRecipeId !== selectedRecipeId) {
+      setPendingDeleteRecipeId(selectedRecipeId)
+      showFeedback('再次点击“删除”以确认')
+      return
+    }
+
+    const recipe = savedRecipes.find(r => r.id === selectedRecipeId)
+    const shouldClearRecipeName = Boolean(recipe && recipeFileName.trim() === recipe.name)
+
+    try {
+      setDeletingRecipeId(selectedRecipeId)
+      setPendingDeleteRecipeId(null)
+      const succeeded = await onDeleteRecipe(selectedRecipeId)
+      if (!succeeded) {
+        return
+      }
+
+      setSelectedRecipeId('')
+
+      if (shouldClearRecipeName) {
+        setRecipeFileName('')
+      }
+
+      if (recipe) {
+        showFeedback(`已删除配方: ${recipe.name}`)
+      }
+    } finally {
+      setDeletingRecipeId(null)
+    }
+  }
+
+
+
 
 
   useEffect(() => {
@@ -457,7 +603,6 @@ export function RecipeDJ({ tags, recipeNameTag, snapshots, onWrite, savingTagId 
         if (DJ_HIDDEN_FIELDS.has(fieldKey.toLowerCase())) return null
         if (fieldKey.toLowerCase() === 'dcholdingpoweroff' && !shouldShowDcHoldingPowerOff) return null
 
-
         const snapshot = getSnapshotOrSimulated(tag, fieldKey, snapshots)
         const meta = getFieldMeta(fieldKey)
 
@@ -474,23 +619,10 @@ export function RecipeDJ({ tags, recipeNameTag, snapshots, onWrite, savingTagId 
       })
       .filter((row): row is RecipeRow => row !== null)
 
-    const recipeNameRow = recipeNameTag
-      ? ({
-          tag: recipeNameTag,
-          fieldKey: 'recipeName',
-          label: '型号',
-          subLabel: recipeNameTag.displayName?.trim() || 'Local.RecipeName',
-          group: '全局设置',
-          unit: '',
-          valueText: formatSnapshotValue('recipeName', recipeNameTag, snapshots.get(recipeNameTag.id)),
-          updatedText: formatTimestamp(snapshots.get(recipeNameTag.id)),
-        } satisfies RecipeRow)
-      : null
+    return fieldRows.sort(compareRows)
+  }, [shouldShowDcHoldingPowerOff, snapshots, tags])
 
-    return [...(recipeNameRow ? [recipeNameRow] : []), ...fieldRows].sort(compareRows)
-  }, [recipeNameTag, shouldShowDcHoldingPowerOff, snapshots, tags])
 
-  const editableCount = rows.filter((row) => row.tag.allowWrite).length
 
   const indexedRows = useMemo<IndexedRecipeRow[]>(
     () => rows.map((row, index) => ({ ...row, seq: index + 1 })),
@@ -506,6 +638,27 @@ export function RecipeDJ({ tags, recipeNameTag, snapshots, onWrite, savingTagId 
     [indexedRows],
   )
 
+  // 保存配方函数（放在 rows 定义之后）
+  const handleSaveRecipe = async () => {
+    if (!recipeFileName.trim()) {
+      showFeedback('请输入配方名')
+      return
+    }
+
+    // 收集当前所有参数值
+    const recipeData: Record<string, string> = {}
+    rows.forEach((row) => {
+      const snapshot = snapshots.get(row.tag.id)
+      if (snapshot?.value !== undefined && snapshot?.value !== null) {
+        recipeData[row.tag.id] = String(snapshot.value)
+      }
+    })
+
+    const succeeded = await onSaveRecipe(recipeFileName.trim(), recipeData)
+    if (succeeded) {
+      showFeedback(`配方 "${recipeFileName.trim()}" 已保存`)
+    }
+  }
 
   if (rows.length === 0) {
     return (
@@ -518,16 +671,93 @@ export function RecipeDJ({ tags, recipeNameTag, snapshots, onWrite, savingTagId 
 
   return (
     <div className="recipe-container">
-      <div className="recipe-sheet-head">
-        <div className="recipe-sheet-head-main">
-          <h3 className="recipe-sheet-title">当前值列支持直接修改，电机泵配方型号取自 `Local.RecipeName`。</h3>
-          <p className="recipe-sheet-subtitle">
-            参数总数 <strong>{rows.length}</strong> ｜ 可编辑参数 <strong>{editableCount}</strong>
-          </p>
+      <div className="recipe-control-panel">
+        <div className="recipe-sheet-head">
+          <div className="recipe-sheet-head-main">
+            <h3 className="recipe-sheet-title">配方创建</h3>
+            <p className="recipe-sheet-subtitle">
+              输入配方名，设置所有配方参数后保存配方
+            </p>
+          </div>
+          <div className="recipe-sheet-actions">
+            <input
+              type="text"
+              className="recipe-filename-input"
+              placeholder="输入配方名"
+              value={recipeFileName}
+              onChange={(e) => setRecipeFileName(e.target.value)}
+              aria-label="配方名"
+            />
+            <button type="button" className="recipe-btn recipe-btn-new" onClick={handleNewRecipe}>
+              新建
+            </button>
+            <button
+              type="button"
+              className="recipe-btn recipe-btn-save"
+              onClick={handleSaveRecipe}
+              disabled={!recipeFileName.trim()}
+            >
+              保存
+            </button>
+          </div>
         </div>
+
+        {/* 配方管理区域 */}
+        <div className="recipe-manager-bar">
+          <div className="recipe-manager-title">配方管理</div>
+          <div className="recipe-radio-group">
+            {savedRecipes.length === 0 ? (
+              <span className="recipe-no-saved">暂无保存的配方</span>
+            ) : (
+              savedRecipes.map((recipe) => (
+                <label key={recipe.id} className="recipe-radio-label">
+                  <input
+                    type="radio"
+                    name="dj-recipe"
+                    value={recipe.id}
+                    checked={selectedRecipeId === recipe.id}
+                    onChange={(e) => setSelectedRecipeId(e.target.value)}
+                    className="recipe-radio"
+                  />
+                  <span className="recipe-radio-text">{recipe.name}</span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="recipe-manager-actions">
+            <button
+              type="button"
+              className="recipe-btn recipe-btn-load"
+              onClick={() => void handleLoadRecipe()}
+              disabled={!selectedRecipeId}
+            >
+              加载
+            </button>
+            <button
+              type="button"
+              className="recipe-btn recipe-btn-delete"
+              onClick={() => void handleDeleteRecipe()}
+              disabled={!selectedRecipeId || deletingRecipeId === selectedRecipeId}
+            >
+              {deletingRecipeId === selectedRecipeId ? '删除中...' : pendingDeleteRecipeId === selectedRecipeId ? '确认删除' : '删除'}
+            </button>
+          </div>
+        </div>
+
+
       </div>
 
+      {/* 反馈消息框 */}
+      {feedbackMessage && (
+        <div className="recipe-feedback">
+          {feedbackMessage}
+        </div>
+      )}
+
       <div className="recipe-cards-grid">
+
+
+
         {groupedRows.map((groupBlock) => (
           <section key={groupBlock.group} className="recipe-group-card">
             <header className="recipe-group-card-head">
@@ -566,6 +796,73 @@ export function RecipeDJ({ tags, recipeNameTag, snapshots, onWrite, savingTagId 
           </section>
         ))}
       </div>
+
+      {(() => {
+        const hasAnySyncButton = showRecipe1SyncButton || showRecipe2SyncButton
+
+        const getTargetFieldKey = (tag: TagDefinition): string | null => {
+          const candidates = [tag.displayName, tag.browseName, tag.nodeId]
+          const patterns = [
+            /^Device1[._]Recipe1\.?(.+)$/i,
+            /^Device1[._]Recipe2\.?(.+)$/i,
+            /^Device1_Recipe1(?:\[\d+\])?_(.+)$/i,
+            /^Device1_Recipe2(?:\[\d+\])?_(.+)$/i,
+          ] as const
+          for (const raw of candidates) {
+            const v = (raw ?? '').trim()
+            if (!v) continue
+            for (const p of patterns) {
+              const m = v.match(p)
+              if (m) return m[1].trim().replace(/^_+/, '')
+            }
+          }
+          return null
+        }
+
+        const syncTo = async (groupKey: 'Device1_Recipe1' | 'Device1_Recipe2') => {
+          const valueByField: Record<string, string> = {}
+          rows.forEach((r) => {
+            const snap = getSnapshotOrSimulated(r.tag, r.fieldKey, snapshots)
+            const raw = getSnapshotRawValue(snap)
+            if (raw !== '') valueByField[r.fieldKey.toLowerCase()] = raw
+          })
+
+          const targets = tags.filter(t => (t.groupKey ?? '').toLowerCase() === groupKey.toLowerCase())
+          let writeCount = 0
+          for (const t of targets) {
+            const k = getTargetFieldKey(t)
+            if (!k) continue
+            const v = valueByField[k.toLowerCase()]
+            if (v === undefined) continue
+            onWrite(t.id, v)
+            writeCount += 1
+          }
+          showFeedback(`已同步 ${writeCount} 个参数到 ${groupKey}`)
+        }
+
+        return (
+          <div className="recipe-sheet-head recipe-sync-card">
+            <div className="recipe-sheet-head-main">
+              <h3 className="recipe-sheet-title">配方同步</h3>
+              <p className="recipe-sheet-subtitle">请核对参数,同步到测试工位</p>
+            </div>
+            {hasAnySyncButton ? (
+              <div className="recipe-sheet-actions">
+                {showRecipe1SyncButton ? (
+                  <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo('Device1_Recipe1')}>
+                    {`同步到${recipe1SyncLabel}`}
+                  </button>
+                ) : null}
+                {showRecipe2SyncButton ? (
+                  <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo('Device1_Recipe2')}>
+                    {`同步到${recipe2SyncLabel}`}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        )
+      })()}
     </div>
   )
 }

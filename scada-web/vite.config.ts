@@ -1,10 +1,14 @@
 import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import liveReload from 'vite-plugin-live-reload'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    liveReload(['../Scada.Api/wwwroot/**/*.{html,js,css}']),
+  ],
   server: {
     host: true,
     proxy: {
@@ -25,5 +29,12 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, '../Scada.Api/wwwroot'),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash][extname]',
+      },
+    },
   },
 })

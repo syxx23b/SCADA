@@ -2,7 +2,8 @@
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import type { FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, openVncTool, updateTag, writeTag } from './api'
+import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+import { isOpcUaTagStatusOk } from './tagStatus'
 import type { BrowseNode, DeviceConnection, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
 import { RecipeDJ } from './components/RecipeDJ'
 import { RecipeQYJ } from './components/RecipeQYJ'
@@ -121,6 +122,36 @@ function isLocalRecipeScopedTag(tag: TagDefinition) {
     const value = (rawValue ?? '').trim()
     return /^Local\./i.test(value) || /^LocalVariable\./i.test(value)
   })
+}
+
+function compareGroupOption(left: string, right: string) {
+  const leftParts = left.trim().toUpperCase().split(/(\d+)/).filter(Boolean)
+  const rightParts = right.trim().toUpperCase().split(/(\d+)/).filter(Boolean)
+  const maxLength = Math.max(leftParts.length, rightParts.length)
+
+  for (let index = 0; index < maxLength; index += 1) {
+    const leftPart = leftParts[index] ?? ''
+    const rightPart = rightParts[index] ?? ''
+    const leftIsNumber = /^\d+$/.test(leftPart)
+    const rightIsNumber = /^\d+$/.test(rightPart)
+
+    if (leftIsNumber && rightIsNumber) {
+      const diff = Number(leftPart) - Number(rightPart)
+      if (diff !== 0) return diff
+      continue
+    }
+
+    if (leftPart === rightPart) continue
+    return leftPart < rightPart ? -1 : 1
+  }
+
+  return 0
+}
+
+function sortGroupOptions(values: Iterable<string>) {
+  const options = Array.from(new Set(values)).filter((value) => value !== 'all')
+  options.sort(compareGroupOption)
+  return ['all', ...options]
 }
 
 function detectLocalRecipeType(tag: TagDefinition): RecipeTypeKey | null {
@@ -542,9 +573,8 @@ function App() {
   const hasLoadedRootBrowse = Object.prototype.hasOwnProperty.call(browseCache, rootBrowseKey)
   const selectedDeviceTags = useMemo(() => tagRows.filter((tag) => tag.deviceId === activeDeviceId), [activeDeviceId, tagRows])
   const selectedDeviceTagGroups = useMemo(() => {
-    const unique = new Set<string>(['all'])
-    for (const tag of selectedDeviceTags) unique.add(getResolvedGroup(activeDeviceName, tag))
-    return Array.from(unique)
+    const values = selectedDeviceTags.map((tag) => getResolvedGroup(activeDeviceName, tag))
+    return sortGroupOptions(values)
   }, [activeDeviceName, selectedDeviceTags])
   const filteredSelectedDeviceTags = useMemo(() => {
     if (selectedTagGroupFilter === 'all') return selectedDeviceTags
@@ -552,12 +582,250 @@ function App() {
   }, [activeDeviceName, selectedDeviceTags, selectedTagGroupFilter])
   const batchRows = batchDrafts
   const activeRecipeType: RecipeTypeKey = view === 'recipeQyj' ? 'QYJRecipe' : 'DJRecipe'
+
+  // 配方文件管理状态 - 从服务器加载
+  const [djRecipeFiles, setDjRecipeFiles] = useState<Array<{ id: string; name: string; createdAt: string; updatedAt: string }>>([])
+  const [qyjRecipeFiles, setQyjRecipeFiles] = useState<Array<{ id: string; name: string; createdAt: string; updatedAt: string }>>([])
+
+  // 当前加载的配方名称（用于更新子组件输入框）
+  const [djLoadedRecipeName, setDjLoadedRecipeName] = useState<string>('')
+  const [qyjLoadedRecipeName, setQyjLoadedRecipeName] = useState<string>('')
+
+  const showStatus = (message: string) => {
+    setStatusMessage(message)
+  }
+
+  // 从服务器加载配方列表
+  const loadRecipes = async () => {
+    try {
+      const [djRecipes, qyjRecipes] = await Promise.all([
+        getRecipes('DJ'),
+        getRecipes('QYJ'),
+      ])
+      setDjRecipeFiles(djRecipes.map(r => ({
+        id: r.id,
+        name: r.name,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      })))
+      setQyjRecipeFiles(qyjRecipes.map(r => ({
+        id: r.id,
+        name: r.name,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      })))
+    } catch (error) {
+      console.error('加载配方列表失败:', error)
+      showStatus('加载配方列表失败')
+    }
+  }
+
+  // 组件挂载时加载配方列表
+  useEffect(() => {
+    void loadRecipes()
+  }, [])
+
+  // 处理保存DJ配方
+  const handleSaveDJRecipe = async (recipeName: string, recipeData: Record<string, string>) => {
+    const trimmedRecipeName = recipeName.trim()
+    if (!trimmedRecipeName) {
+      showStatus('请输入配方名')
+      return false
+    }
+
+    const existingRecipe = djRecipeFiles.find((f) => f.name === trimmedRecipeName)
+
+    try {
+      if (existingRecipe) {
+        await updateRecipe(existingRecipe.id, {
+          name: trimmedRecipeName,
+          description: '',
+          items: recipeData,
+        })
+        showStatus(`配方 "${trimmedRecipeName}" 已更新`)
+      } else {
+        await createRecipe({
+          name: trimmedRecipeName,
+          description: '',
+          recipeType: 'DJ',
+          items: recipeData,
+        })
+        showStatus(`配方 "${trimmedRecipeName}" 已保存`)
+      }
+
+      await loadRecipes()
+      setDjLoadedRecipeName(trimmedRecipeName)
+
+      if (activeRecipeNameTag?.id && activeRecipeNameTag.allowWrite) {
+        void handleWrite(activeRecipeNameTag.id, trimmedRecipeName)
+      }
+
+      return true
+    } catch (error) {
+      console.error('保存配方失败:', error)
+      showStatus(`保存配方失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      return false
+    }
+  }
+
+
+  // 处理保存QYJ配方
+  const handleSaveQYJRecipe = async (recipeName: string, recipeData: Record<string, string>) => {
+    const trimmedRecipeName = recipeName.trim()
+    if (!trimmedRecipeName) {
+      showStatus('请输入配方名')
+      return false
+    }
+
+    const existingRecipe = qyjRecipeFiles.find((f) => f.name === trimmedRecipeName)
+
+    try {
+      if (existingRecipe) {
+        await updateRecipe(existingRecipe.id, {
+          name: trimmedRecipeName,
+          description: '',
+          items: recipeData,
+        })
+        showStatus(`配方 "${trimmedRecipeName}" 已更新`)
+      } else {
+        await createRecipe({
+          name: trimmedRecipeName,
+          description: '',
+          recipeType: 'QYJ',
+          items: recipeData,
+        })
+        showStatus(`配方 "${trimmedRecipeName}" 已保存`)
+      }
+
+      await loadRecipes()
+      setQyjLoadedRecipeName(trimmedRecipeName)
+
+      if (activeRecipeNameTag?.id && activeRecipeNameTag.allowWrite) {
+        void handleWrite(activeRecipeNameTag.id, trimmedRecipeName)
+      }
+
+      return true
+    } catch (error) {
+      console.error('保存配方失败:', error)
+      showStatus(`保存配方失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      return false
+    }
+  }
+
+
+  // 处理加载DJ配方
+  const handleLoadDJRecipe = async (fileId: string) => {
+    const file = djRecipeFiles.find((f) => f.id === fileId)
+    if (!file) {
+      showStatus('配方文件不存在')
+      return false
+    }
+
+    try {
+      const detail = await getRecipe(fileId)
+
+      Object.entries(detail.items).forEach(([tagId, value]) => {
+        if (tagId === activeRecipeNameTag?.id) return
+        void handleWrite(tagId, value)
+      })
+
+      setDjLoadedRecipeName(file.name)
+      if (activeRecipeNameTag?.id && activeRecipeNameTag.allowWrite) {
+        void handleWrite(activeRecipeNameTag.id, file.name)
+      }
+
+      showStatus(`配方 "${file.name}" 已加载`)
+      return true
+    } catch (error) {
+      console.error('加载配方失败:', error)
+      showStatus(`加载配方失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      return false
+    }
+  }
+
+
+  // 处理加载QYJ配方
+  const handleLoadQYJRecipe = async (fileId: string) => {
+    const file = qyjRecipeFiles.find((f) => f.id === fileId)
+    if (!file) {
+      showStatus('配方文件不存在')
+      return false
+    }
+
+    try {
+      const detail = await getRecipe(fileId)
+
+      Object.entries(detail.items).forEach(([tagId, value]) => {
+        if (tagId === activeRecipeNameTag?.id) return
+        void handleWrite(tagId, value)
+      })
+
+      setQyjLoadedRecipeName(file.name)
+      if (activeRecipeNameTag?.id && activeRecipeNameTag.allowWrite) {
+        void handleWrite(activeRecipeNameTag.id, file.name)
+      }
+
+      showStatus(`配方 "${file.name}" 已加载`)
+      return true
+    } catch (error) {
+      console.error('加载配方失败:', error)
+      showStatus(`加载配方失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      return false
+    }
+  }
+
+
+  // 处理删除DJ配方
+  const handleDeleteDJRecipe = async (fileId: string) => {
+    const file = djRecipeFiles.find((f) => f.id === fileId)
+    if (!file) {
+      showStatus('配方文件不存在，删除失败')
+      return false
+    }
+
+    try {
+      await deleteRecipe(fileId)
+      await loadRecipes()
+      if (djLoadedRecipeName === file.name) {
+        setDjLoadedRecipeName('')
+      }
+      showStatus(`配方 "${file.name}" 已删除`)
+      return true
+    } catch (error) {
+      console.error('删除配方失败:', error)
+      showStatus(`删除配方失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      return false
+    }
+  }
+
+  // 处理删除QYJ配方
+  const handleDeleteQYJRecipe = async (fileId: string) => {
+    const file = qyjRecipeFiles.find((f) => f.id === fileId)
+    if (!file) {
+      showStatus('配方文件不存在，删除失败')
+      return false
+    }
+
+    try {
+      await deleteRecipe(fileId)
+      await loadRecipes()
+      if (qyjLoadedRecipeName === file.name) {
+        setQyjLoadedRecipeName('')
+      }
+      showStatus(`配方 "${file.name}" 已删除`)
+      return true
+    } catch (error) {
+      console.error('删除配方失败:', error)
+      showStatus(`删除配方失败: ${error instanceof Error ? error.message : '未知错误'}`)
+      return false
+    }
+  }
+
+
   const sidebarItems = useMemo(() => (isAuthenticated ? [...baseSidebarItems, ...protectedSidebarItems] : baseSidebarItems), [isAuthenticated])
   const groups = useMemo(() => {
-
-    const unique = new Set<string>(['all'])
-    for (const tag of runtime.tags) unique.add(getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag))
-    return Array.from(unique)
+    const values = runtime.tags.map((tag) => getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag))
+    return sortGroupOptions(values)
   }, [runtime.tags, runtimeNameById])
 
   function faceplatePathPrefix(faceplateIndex: number) {
@@ -697,12 +965,7 @@ function App() {
     const hasConnectedDevice = faceplateTags.some((tag) => (runtimeDeviceStatusById[tag.deviceId] ?? '').toLowerCase() === 'connected')
     const hasGoodSnapshot = faceplateTags.some((tag) => {
       const snapshot = snapshotByTagId.get(tag.id)
-      if (!snapshot) return false
-      const q = (snapshot.quality ?? '').toLowerCase()
-      const s = (snapshot.connectionState ?? '').toLowerCase()
-      const qualityOk = q === '' || q === 'good' || q === '0' || q === '00000000' || q === '0000000'
-      const stateOk = s === '' || s === 'connected'
-      return qualityOk && stateOk
+      return isOpcUaTagStatusOk(snapshot)
     })
     const faceplateDeviceStatuses = Array.from(
       new Set(faceplateTags.map((tag) => (runtimeDeviceStatusById[tag.deviceId] ?? '').toLowerCase()).filter((value) => value !== '')),
@@ -771,6 +1034,23 @@ function App() {
     }
   })
   }, [dashboardFaceplateIndexes, dashboardTagsByFaceplate, dashboardTrendByFaceplate, runtimeDeviceStatusById, snapshotByTagId])
+
+  const dashboardSyncTargets = useMemo(() => {
+    const recipe1 = dashboardDataList.find((item) => item.faceplateIndex === 1)
+    const recipe2 = dashboardDataList.find((item) => item.faceplateIndex === 2)
+
+    return {
+      recipe1: {
+        visible: recipe1?.boardHeadClass === 'standby',
+        label: recipe1?.title ?? '工位1',
+      },
+      recipe2: {
+        visible: recipe2?.boardHeadClass === 'standby',
+        label: recipe2?.title ?? '工位2',
+      },
+    }
+  }, [dashboardDataList])
+
 
   const filteredRuntimeTags = useMemo(() => {
     const tags = runtime.tags.filter((tag) => {
@@ -1286,9 +1566,8 @@ function App() {
                   <th>数据类型</th>
                   <th>状态</th>
                   <th>最新时间</th>
-                  <th>
+                  <th className="group-column-head">
                     <div className="table-filter-head">
-                      <span>分组</span>
                       <select className="header-filter" value={groupFilter} onChange={(e) => setGroupFilter(e.target.value)} aria-label="按分组筛选">
                         <option value="all">全部</option>
                         {groups.filter((g) => g !== 'all').map((g) => <option key={g} value={g}>{g}</option>)}
@@ -1719,7 +1998,7 @@ function App() {
               </div>
               <div className="panel-actions panel-actions-in-head">
                 <span className="status-line">{filteredSelectedDeviceTags.length}/{selectedDeviceTags.length} 个</span>
-                <select className="header-filter" value={selectedTagGroupFilter} onChange={(e) => setSelectedTagGroupFilter(e.target.value)} aria-label="按分组筛选已订阅变量">
+                <select className="panel-filter-select" value={selectedTagGroupFilter} onChange={(e) => setSelectedTagGroupFilter(e.target.value)} aria-label="按分组筛选已订阅变量">
                   <option value="all">全部分组</option>
                   {selectedDeviceTagGroups.filter((g) => g !== 'all').map((g) => <option key={g} value={g}>{g}</option>)}
                 </select>
@@ -1788,19 +2067,37 @@ function App() {
         {activeRecipeType === 'DJRecipe' ? (
           <RecipeDJ
             tags={recipeRows.map(r => r.tag)}
-            recipeNameTag={activeRecipeNameTag}
             snapshots={snapshotByTagId}
             onWrite={(tagId, value) => void handleWrite(tagId, value)}
             savingTagId={savingTagId}
+            savedRecipes={djRecipeFiles}
+            onSaveRecipe={handleSaveDJRecipe}
+            onLoadRecipe={handleLoadDJRecipe}
+            onDeleteRecipe={handleDeleteDJRecipe}
+            loadedRecipeName={djLoadedRecipeName}
+            showRecipe1SyncButton={dashboardSyncTargets.recipe1.visible}
+            showRecipe2SyncButton={dashboardSyncTargets.recipe2.visible}
+            recipe1SyncLabel={dashboardSyncTargets.recipe1.label}
+            recipe2SyncLabel={dashboardSyncTargets.recipe2.label}
           />
+
         ) : (
           <RecipeQYJ
             tags={recipeRows.map(r => r.tag)}
-            recipeNameTag={activeRecipeNameTag}
             snapshots={snapshotByTagId}
             onWrite={(tagId, value) => void handleWrite(tagId, value)}
             savingTagId={savingTagId}
+            savedRecipes={qyjRecipeFiles}
+            onSaveRecipe={handleSaveQYJRecipe}
+            onLoadRecipe={handleLoadQYJRecipe}
+            onDeleteRecipe={handleDeleteQYJRecipe}
+            loadedRecipeName={qyjLoadedRecipeName}
+            showRecipe1SyncButton={dashboardSyncTargets.recipe1.visible}
+            showRecipe2SyncButton={dashboardSyncTargets.recipe2.visible}
+            recipe1SyncLabel={dashboardSyncTargets.recipe1.label}
+            recipe2SyncLabel={dashboardSyncTargets.recipe2.label}
           />
+
         )}
       </section>
 

@@ -115,6 +115,35 @@ public sealed record TagImportResultDto(
     int Failed,
     List<string> Errors);
 
+// 配方相关 DTO
+public sealed record RecipeDto(
+    Guid Id,
+    string Name,
+    string Description,
+    string RecipeType,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt);
+
+public sealed record RecipeDetailDto(
+    Guid Id,
+    string Name,
+    string Description,
+    string RecipeType,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset UpdatedAt,
+    Dictionary<string, string> Items);
+
+public sealed record SaveRecipeRequest(
+    string Name,
+    string Description,
+    string RecipeType,
+    Dictionary<string, string> Items);
+
+public sealed record UpdateRecipeRequest(
+    string Name,
+    string Description,
+    Dictionary<string, string> Items);
+
 public static class ScadaDtoMapper
 {
     public static DeviceConnectionDto ToDto(this DeviceConnectionEntity entity)
@@ -146,6 +175,17 @@ public static class ScadaDtoMapper
             entity.AllowWrite,
             entity.Enabled,
             entity.GroupKey,
+            entity.UpdatedAt);
+    }
+
+    public static RecipeDto ToDto(this RecipeEntity entity)
+    {
+        return new RecipeDto(
+            entity.Id,
+            entity.Name,
+            entity.Description,
+            entity.RecipeType,
+            entity.CreatedAt,
             entity.UpdatedAt);
     }
 }

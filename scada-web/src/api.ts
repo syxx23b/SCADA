@@ -104,3 +104,46 @@ export function openVncTool(host: string) {
     body: JSON.stringify({ host }),
   })
 }
+
+// 配方相关 API
+export interface Recipe {
+  id: string
+  name: string
+  description: string
+  recipeType: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RecipeDetail extends Recipe {
+  items: Record<string, string>
+}
+
+export function getRecipes(type?: string) {
+  const query = type ? `?type=${encodeURIComponent(type)}` : ''
+  return request<Recipe[]>(`/api/recipes${query}`)
+}
+
+export function getRecipe(id: string) {
+  return request<RecipeDetail>(`/api/recipes/${id}`)
+}
+
+export function createRecipe(payload: { name: string; description: string; recipeType: string; items: Record<string, string> }) {
+  return request<Recipe>('/api/recipes', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateRecipe(id: string, payload: { name: string; description: string; items: Record<string, string> }) {
+  return request<Recipe>(`/api/recipes/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function deleteRecipe(id: string) {
+  return request<void>(`/api/recipes/${id}`, {
+    method: 'DELETE',
+  })
+}

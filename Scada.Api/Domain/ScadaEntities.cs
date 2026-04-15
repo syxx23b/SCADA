@@ -90,6 +90,29 @@ public sealed class WriteAuditEntity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+// 配方定义实体
+public sealed class RecipeEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string RecipeType { get; set; } = string.Empty; // "DJ" 或 "QYJ"
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public List<RecipeItemEntity> Items { get; set; } = [];
+}
+
+// 配方项实体（存储每个标签的值）
+public sealed class RecipeItemEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid RecipeId { get; set; }
+    public RecipeEntity? Recipe { get; set; }
+    public Guid TagId { get; set; } // 关联的标签ID
+    public string FieldKey { get; set; } = string.Empty; // 字段名
+    public string Value { get; set; } = string.Empty; // 存储的值
+}
+
 public sealed record RecipeDefinition(Guid Id, string Name, string Description);
 
 public sealed record RecipeItem(Guid TagId, string NodeId, string DataType, string GroupKey);
