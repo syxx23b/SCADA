@@ -1747,11 +1747,11 @@ body,
   transform: translateX(-50%);
 }
 
-/* 垂直堆叠的甘特图轨道 */
+/* 多轨道甘特图 - 每个工位3个轨道 */
 .efficiency-track-stack {
   display: flex;
   flex-direction: column;
-  gap: 0px;
+  gap: 4px;
   padding: 12px;
   background: transparent;
   border-radius: 8px;
@@ -1761,17 +1761,34 @@ body,
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 36px;
-  background: transparent;
+  min-height: 28px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.efficiency-track-row::before {
+  content: attr(data-label);
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.75rem;
+  color: #666;
+  font-weight: 500;
+  z-index: 1;
+  background: rgba(245, 245, 245, 0.9);
+  padding: 0 4px;
 }
 
 .efficiency-track {
   position: relative;
   flex: 1;
-  height: 28px;
+  height: 100%;
   overflow: hidden;
-  border-radius: 0;
   background: transparent;
+  margin-left: 48px;
 }
 
 
@@ -1779,7 +1796,6 @@ body,
   position: absolute;
   top: 0;
   bottom: 0;
-  min-width: 4px;
   display: block;
   border-radius: 0;
   transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1), opacity 200ms cubic-bezier(0.4, 0, 0.2, 1);

@@ -149,9 +149,6 @@ interface HistoryRecord {
   endedAt: number
 }
 
-// 内存中的历史数据库 - Map<faceplateIndex, HistoryRecord[]>
-const historyDatabase = new Map<number, HistoryRecord[]>()
-
 // 当前仿真状态
 interface CurrentSimState {
   stateKey: EfficiencySimulationStateKey
@@ -159,11 +156,75 @@ interface CurrentSimState {
   durationMs: number
 }
 
+// localStorage 键名
+const STORAGE_KEY_RECORDS = 'scada_simulation_records'
+const STORAGE_KEY_STATES = 'scada_simulation_states'
+const STORAGE_KEY_INIT_TIME = 'scada_simulation_init_time'
+
+// 内存中的历史数据库 - Map<faceplateIndex, HistoryRecord[]>
+const historyDatabase = new Map<number, HistoryRecord[]>()
 const currentStates = new Map<number, CurrentSimState>()
 
 // 仿真器定时器
 let simulationTimer: number | null = null
 let isInitialized = false
+
+// 从 localStorage 加载数据
+function loadFromStorage(): boolean {
+  try {
+    const recordsJson = localStorage.getItem(STORAGE_KEY_RECORDS)
+    const statesJson = localStorage.getItem(STORAGE_KEY_STATES)
+    const initTime = localStorage.getItem(STORAGE_KEY_INIT_TIME)
+
+    if (!recordsJson || !statesJson || !initTime) return false
+
+    // 检查数据是否超过12小时
+    const initTimeMs = parseInt(initTime, 10)
+    const now = Date.now()
+    if (now - initTimeMs > 12 * 60 * 60_000) {
+      // 数据过期，清除
+      localStorage.removeItem(STORAGE_KEY_RECORDS)
+      localStorage.removeItem(STORAGE_KEY_STATES)
+      localStorage.removeItem(STORAGE_KEY_INIT_TIME)
+      return false
+    }
+
+    const records = JSON.parse(recordsJson) as Record<string, HistoryRecord[]>
+    const states = JSON.parse(statesJson) as Record<string, CurrentSimState>
+
+    // 恢复到内存
+    for (const [key, value] of Object.entries(records)) {
+      historyDatabase.set(parseInt(key, 10), value)
+    }
+    for (const [key, value] of Object.entries(states)) {
+      currentStates.set(parseInt(key, 10), value)
+    }
+
+    return true
+  } catch {
+    return false
+  }
+}
+
+// 保存到 localStorage
+function saveToStorage() {
+  try {
+    const records: Record<string, HistoryRecord[]> = {}
+    for (const [key, value] of historyDatabase.entries()) {
+      records[key] = value
+    }
+
+    const states: Record<string, CurrentSimState> = {}
+    for (const [key, value] of currentStates.entries()) {
+      states[key] = value
+    }
+
+    localStorage.setItem(STORAGE_KEY_RECORDS, JSON.stringify(records))
+    localStorage.setItem(STORAGE_KEY_STATES, JSON.stringify(states))
+  } catch {
+    // 存储失败（可能是大小限制），忽略
+  }
+}
 
 // 伪随机数生成器
 function createSeededRandom(seed: number) {
@@ -205,24 +266,66 @@ export function resetSimulation() {
   historyDatabase.clear()
   currentStates.clear()
   isInitialized = false
+  localStorage.removeItem(STORAGE_KEY_RECORDS)
+  localStorage.removeItem(STORAGE_KEY_STATES)
+  localStorage.removeItem(STORAGE_KEY_INIT_TIME)
   initHistoryDatabase()
 }
 
-// 初始化历史数据库 - 清空历史，未采样数据按未工作处理，从当前时间开始采样
+// 初始化历史数据库 - 优先从 localStorage 加载
 function initHistoryDatabase() {
   if (isInitialized) return
   isInitialized = true
 
+  // 尝试从 storage 加载
+  if (loadFromStorage()) {
+    // 恢复后继续更新当前记录
+    const now = Date.now()
+    for (const lane of efficiencySimulationLanes) {
+      const records = historyDatabase.get(lane.faceplateIndex) ?? []
+      const lastRecord = records[records.length - 1]
+      const currentState = currentStates.get(lane.faceplateIndex)
+
+      // 更新最后一条记录和当前状态的结束时间
+      if (lastRecord) {
+        lastRecord.endedAt = now
+      }
+      if (currentState) {
+        // 检查是否需要进行状态转换
+        while (now >= currentState.startedAt + currentState.durationMs) {
+          const stateEndTime = currentState.startedAt + currentState.durationMs
+          const newStateKey = getNextSimulationState(currentState.stateKey, lane.faceplateIndex)
+          const durationMs = getSimulationDurationMs()
+
+          // 创建新记录
+          records.push({
+            faceplateIndex: lane.faceplateIndex,
+            stationName: lane.stationName,
+            stateKey: newStateKey,
+            startedAt: stateEndTime,
+            endedAt: now,
+          })
+
+          currentState.stateKey = newStateKey
+          currentState.startedAt = stateEndTime
+          currentState.durationMs = durationMs
+        }
+      }
+    }
+    saveToStorage()
+    return
+  }
+
+  // 首次初始化
   const now = Date.now()
   const startTime = now - 12 * 60 * 60_000 // 12小时前
 
   for (const lane of efficiencySimulationLanes) {
-    // 24小时内未采样的数据，按"未工作"处理
     const records: HistoryRecord[] = [
       {
         faceplateIndex: lane.faceplateIndex,
         stationName: lane.stationName,
-        stateKey: 'disconnected', // 未工作
+        stateKey: 'disconnected',
         startedAt: startTime,
         endedAt: now,
       },
@@ -230,13 +333,16 @@ function initHistoryDatabase() {
 
     historyDatabase.set(lane.faceplateIndex, records)
 
-    // 从当前时间开始，第一个状态设为"未工作"
     currentStates.set(lane.faceplateIndex, {
       stateKey: 'disconnected',
       startedAt: now,
       durationMs: getSimulationDurationMs(),
     })
   }
+
+  // 保存初始化时间
+  localStorage.setItem(STORAGE_KEY_INIT_TIME, now.toString())
+  saveToStorage()
 }
 
 // 仿真器 tick - 每秒调用一次
@@ -249,34 +355,38 @@ function simulationTick() {
     if (!currentState) continue
 
     const records = historyDatabase.get(lane.faceplateIndex) ?? []
-    const lastRecord = records[records.length - 1]
+    let lastRecord = records[records.length - 1]
 
     // 检查是否需要状态转换
     if (now >= currentState.startedAt + currentState.durationMs) {
+      // 结束上一个记录
+      if (lastRecord) {
+        lastRecord.endedAt = currentState.startedAt + currentState.durationMs
+      }
+
       // 生成新状态
-      const seed = lane.faceplateIndex * 1_000_003 + Math.floor(now / 1000)
-      const random = createSeededRandom(seed)
       const newStateKey = getNextSimulationState(currentState.stateKey, lane.faceplateIndex)
       const durationMs = getSimulationDurationMs()
+      const newStartAt = currentState.startedAt + currentState.durationMs
 
       // 创建新记录
       const newRecord: HistoryRecord = {
         faceplateIndex: lane.faceplateIndex,
         stationName: lane.stationName,
         stateKey: newStateKey,
-        startedAt: now,
-        endedAt: now + durationMs,
+        startedAt: newStartAt,
+        endedAt: now,
       }
       records.push(newRecord)
 
       // 更新当前状态
       currentStates.set(lane.faceplateIndex, {
         stateKey: newStateKey,
-        startedAt: now,
+        startedAt: newStartAt,
         durationMs,
       })
     } else {
-      // 更新当前记录的结束时间
+      // 状态未变，更新当前记录的结束时间到当前时间
       if (lastRecord) {
         lastRecord.endedAt = now
       }
@@ -288,6 +398,9 @@ function simulationTick() {
       records.shift()
     }
   }
+
+  // 保存到 localStorage
+  saveToStorage()
 }
 
 // 启动仿真器

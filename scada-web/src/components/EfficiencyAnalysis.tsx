@@ -1,6 +1,7 @@
 import type { EfficiencyTimelineLane, EfficiencyTimelineResponse } from '../types'
 
-const LEGEND_ITEMS: Array<{ key: Exclude<EfficiencyTimelineLane['currentStateKey'], 'disconnected'>; label: string; color: string; description: string }> = [
+const LEGEND_ITEMS: Array<{ key: EfficiencyTimelineLane['currentStateKey']; label: string; color: string; description: string }> = [
+  { key: 'disconnected', label: '未工作', color: '#dadce0', description: '灰色' },
   { key: 'standby', label: '待机', color: '#fbbc04', description: '黄色' },
   { key: 'running', label: '测试中', color: '#34a853', description: '绿色' },
   { key: 'fault', label: '报警', color: '#ea4335', description: '红色' },
@@ -103,11 +104,13 @@ function segmentStyle(segmentStart: string, segmentEnd: string, windowStart: str
     return { left: '0%', width: '0%' }
   }
 
+  // 基于时间轴计算位置和宽度（真实比例，不限制最小宽度）
   const left = ((start - min) / total) * 100
-  const width = Math.max(((end - start) / total) * 100, 0.75)
+  const width = ((end - start) / total) * 100
+
   return {
-    left: `${Math.max(0, left)}%`,
-    width: `${Math.min(100 - Math.max(0, left), width)}%`,
+    left: `${Math.max(0, Math.min(100, left))}%`,
+    width: `${Math.max(0, Math.min(100, width))}%`,
   }
 }
 
@@ -158,7 +161,7 @@ export function EfficiencyAnalysis({
                       </div>
                     ))}
                   </div>
-                  <div className="efficiency-track-stack" role="img" aria-label={`${lane.stationName} 最近 24 小时状态甘特图`}>
+                  <div className="efficiency-track-stack" role="img" aria-label={`${lane.stationName} 最近 12 小时状态甘特图`}>
                     {LEGEND_ITEMS.map((item) => (
                       <div key={`${lane.faceplateIndex}-${item.key}`} className={`efficiency-track-row ${item.key}`} data-label={item.label}>
                         <div className="efficiency-track" aria-hidden="true">
