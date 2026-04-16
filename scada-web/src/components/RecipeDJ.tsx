@@ -10,9 +10,12 @@ interface RecipeFile {
 }
 
 interface RecipeDJProps {
-  tags: TagDefinition[]
+  sourceTags: TagDefinition[]
+  allTags: TagDefinition[]
   snapshots: Map<string, TagSnapshot>
-  onWrite: (tagId: string, value: string) => void
+
+  onWrite: (tagId: string, value: string) => Promise<boolean>
+
   savingTagId: string | null
   savedRecipes: RecipeFile[]
   onSaveRecipe: (recipeName: string, recipeData: Record<string, string>) => Promise<boolean>
@@ -212,12 +215,19 @@ const DJ_FIELD_PATTERNS = [
 
 const DJ_HIDDEN_FIELDS = new Set(['self_priming', 'self_primingtime'])
 
+function normalizeTagPath(rawValue: string) {
+  const trimmed = rawValue.trim()
+  const nodeIdIndex = trimmed.indexOf(';s=')
+  return nodeIdIndex >= 0 ? trimmed.slice(nodeIdIndex + 3) : trimmed
+}
+
 function extractFieldKey(tag: TagDefinition) {
   const candidates = [tag.displayName, tag.browseName, tag.nodeId]
 
   for (const rawValue of candidates) {
-    const value = (rawValue ?? '').trim()
+    const value = normalizeTagPath(rawValue ?? '')
     if (!value) continue
+
 
     for (const pattern of DJ_FIELD_PATTERNS) {
       const match = value.match(pattern)
@@ -369,9 +379,10 @@ function ValueEditor({
   tag: TagDefinition
   fieldKey: string
   valueText: string
-  onWrite: (tagId: string, value: string) => void
+  onWrite: (tagId: string, value: string) => Promise<boolean>
   savingTagId: string | null
 }) {
+
   const options = getFieldOptions(fieldKey)
   const currentValue = options ? resolveDictionaryValue(fieldKey, valueText) : valueText === '—' ? '' : valueText
   const [draft, setDraft] = useState(currentValue)
@@ -380,11 +391,14 @@ function ValueEditor({
     setDraft(currentValue)
   }, [currentValue, tag.id])
 
+  // 型号字段只读
+  if (fieldKey.toLowerCase() === 'recipename') return <span className="recipe-readonly recipe-readonly-value">{valueText}</span>
+
   if (!tag.allowWrite) return <span className="recipe-readonly recipe-readonly-value">{valueText}</span>
 
   const disabled = savingTagId === tag.id
   const commit = () => {
-    const nextValue = fieldKey.toLowerCase() === 'recipename' ? draft.trim() : normalizeNumericText(draft)
+    const nextValue = normalizeNumericText(draft)
     if (nextValue !== draft) {
       setDraft(nextValue)
     }
@@ -486,7 +500,8 @@ function ValueEditor({
 }
 
 export function RecipeDJ({
-  tags,
+  sourceTags,
+  allTags,
   snapshots,
   onWrite,
   savingTagId,
@@ -500,8 +515,9 @@ export function RecipeDJ({
   recipe1SyncLabel,
   recipe2SyncLabel,
 }: RecipeDJProps) {
-  const motorTypeTag = useMemo(() => findTagByFieldKey(tags, 'motorType'), [tags])
-  const dcHoldingPowerOffTag = useMemo(() => findTagByFieldKey(tags, 'dcHoldingPowerOff'), [tags])
+  const motorTypeTag = useMemo(() => findTagByFieldKey(sourceTags, 'motorType'), [sourceTags])
+  const dcHoldingPowerOffTag = useMemo(() => findTagByFieldKey(sourceTags, 'dcHoldingPowerOff'), [sourceTags])
+
   const motorTypeSnapshot = motorTypeTag ? getSnapshotOrSimulated(motorTypeTag, 'motorType', snapshots) : undefined
   const motorTypeValue = motorTypeTag ? getSnapshotRawValue(motorTypeSnapshot) : ''
   const shouldShowDcHoldingPowerOff = motorTypeValue === '2'
@@ -620,7 +636,8 @@ export function RecipeDJ({
   }, [dcHoldingPowerOffTag, onWrite, savingTagId, shouldShowDcHoldingPowerOff, snapshots])
 
   const rows = useMemo(() => {
-    const fieldRows = tags
+    const fieldRows = sourceTags
+
       .map((tag) => {
         const fieldKey = extractFieldKey(tag)
         if (!fieldKey) return null
@@ -644,7 +661,8 @@ export function RecipeDJ({
       .filter((row): row is RecipeRow => row !== null)
 
     return fieldRows.sort(compareRows)
-  }, [shouldShowDcHoldingPowerOff, snapshots, tags])
+  }, [shouldShowDcHoldingPowerOff, snapshots, sourceTags])
+
 
 
 
@@ -709,7 +727,16 @@ export function RecipeDJ({
               className="recipe-filename-input"
               placeholder="输入配方名"
               value={recipeFileName}
-              onChange={(e) => setRecipeFileName(e.target.value)}
+              onChange={(e) => {
+                let value = e.target.value
+                // 配方名：限制最大16字符，禁止中文
+                value = value.replace(/[\u4e00-\u9fa5]/g, '')
+                if (value.length > 16) {
+                  value = value.slice(0, 16)
+                }
+                setRecipeFileName(value)
+              }}
+              maxLength={16}
               aria-label="配方名"
             />
             <button type="button" className="recipe-btn recipe-btn-new" onClick={handleNewRecipe}>
@@ -821,48 +848,153 @@ export function RecipeDJ({
         ))}
       </div>
 
+      {/* 配方同步区域 */}
       {(() => {
-        const hasAnySyncButton = showRecipe1SyncButton || showRecipe2SyncButton
+        // DJ配方同步目标：Recipe_DB.DJRecipe[1] 和 Recipe_DB.DJRecipe[2]
+        // 源字段：Local.RecipeDJ.xxx -> 目标字段：Recipe_DB.DJRecipe[1].xxx / Recipe_DB.DJRecipe[2].xxx
 
         const getTargetFieldKey = (tag: TagDefinition): string | null => {
           const candidates = [tag.displayName, tag.browseName, tag.nodeId]
           const patterns = [
-            /^Device1[._]Recipe1\.?(.+)$/i,
-            /^Device1[._]Recipe2\.?(.+)$/i,
-            /^Device1_Recipe1(?:\[\d+\])?_(.+)$/i,
-            /^Device1_Recipe2(?:\[\d+\])?_(.+)$/i,
+            /^Recipe_DB\.DJRecipe\[(\d+)\]\.(.+)$/i,
+            /^Recipe_DB_DJRecipe(?:\[(\d+)\])?_(.+)$/i,
           ] as const
           for (const raw of candidates) {
-            const v = (raw ?? '').trim()
+            const v = normalizeTagPath(raw ?? '')
             if (!v) continue
             for (const p of patterns) {
               const m = v.match(p)
-              if (m) return m[1].trim().replace(/^_+/, '')
+              if (m) {
+                return m[2].trim().replace(/^_+/, '')
+              }
             }
           }
           return null
         }
 
-        const syncTo = async (groupKey: 'Device1_Recipe1' | 'Device1_Recipe2') => {
-          const valueByField: Record<string, string> = {}
-          rows.forEach((r) => {
-            const snap = getSnapshotOrSimulated(r.tag, r.fieldKey, snapshots)
-            const raw = getSnapshotRawValue(snap)
-            if (raw !== '') valueByField[r.fieldKey.toLowerCase()] = raw
+
+        // DJ配方字段映射表（规则1使用 Local.RecipeName，其他使用 Local.RecipeDJ.xxx）
+        const DJ_FIELD_MAP: Record<string, string> = {
+          'recipename': 'Local.RecipeName',
+          'motortype': 'Local.RecipeDJ.motorType',
+          'barcodelength': 'Local.RecipeDJ.barcodeLength',
+          'nobarcodestart': 'Local.RecipeDJ.noBarcodeStart',
+          'dcholdingpoweroff': 'Local.RecipeDJ.dcHoldingPowerOff',
+          'inletcleantime': 'Local.RecipeDJ.inletCleanTime',
+          'lowstartcount': 'Local.RecipeDJ.lowStartCount',
+          'lowstartcurrent': 'Local.RecipeDJ.lowStartCurrent',
+          'highvoltagetime': 'Local.RecipeDJ.highVoltageTime',
+          'highbreakintime': 'Local.RecipeDJ.highBreakInTime',
+          'highbreakincount': 'Local.RecipeDJ.highBreakInCount',
+          'triggerontime': 'Local.RecipeDJ.triggerOnTime',
+          'triggerofftime': 'Local.RecipeDJ.triggerOffTime',
+          'triggercount': 'Local.RecipeDJ.triggerCount',
+          'siphontime': 'Local.RecipeDJ.siphonTime',
+          'siphon': 'Local.RecipeDJ.siphon',
+          'pressureholdtime': 'Local.RecipeDJ.pressureHoldTime',
+          'holdingpressuredrop': 'Local.RecipeDJ.holdingPressureDrop',
+          'blowtime': 'Local.RecipeDJ.blowTime',
+          'self_priming': 'Local.RecipeDJ.self_priming',
+          'self_primingtime': 'Local.RecipeDJ.self_primingTime',
+          'endurancetime': 'Local.RecipeDJ.enduranceTime',
+          'endurancetriggerontime': 'Local.RecipeDJ.enduranceTriggerOnTime',
+          'endurancetriggerofftime': 'Local.RecipeDJ.enduranceTriggerOffTime',
+          'pressureholdinginterval': 'Local.RecipeDJ.pressureHoldingInterval',
+          'enduranceinletmonitor': 'Local.RecipeDJ.enduranceInletMonitor',
+          'datauploadfrequency': 'Local.RecipeDJ.dataUploadFrequency',
+          'pressuremin': 'Local.RecipeDJ.pressureMin',
+          'pressuremax': 'Local.RecipeDJ.pressureMax',
+          'holdingpressuremin': 'Local.RecipeDJ.holdingPressureMin',
+          'holdingpressuremax': 'Local.RecipeDJ.holdingPressureMax',
+          'recoilpressuremin': 'Local.RecipeDJ.recoilPressureMin',
+          'recoilpressuremax': 'Local.RecipeDJ.recoilPressureMax',
+          'currentmin': 'Local.RecipeDJ.currentMin',
+          'currentmax': 'Local.RecipeDJ.currentMax',
+          'triggeroffcurrentmin': 'Local.RecipeDJ.triggerOffCurrentMin',
+          'triggeroffcurrentmax': 'Local.RecipeDJ.triggerOffCurrentMax',
+          'flowmin': 'Local.RecipeDJ.flowMin',
+          'flowmax': 'Local.RecipeDJ.flowMax',
+        }
+
+        const syncTo = async (recipeIndex: 1 | 2) => {
+          const targetPrefix = `Recipe_DB.DJRecipe[${recipeIndex}].`.toLowerCase()
+          const targets = allTags.filter((tag) => {
+            const candidates = [tag.displayName, tag.browseName, tag.nodeId]
+            return candidates.some((raw) => normalizeTagPath(raw ?? '').toLowerCase().includes(targetPrefix))
           })
 
-          const targets = tags.filter(t => (t.groupKey ?? '').toLowerCase() === groupKey.toLowerCase())
-          let writeCount = 0
-          for (const t of targets) {
-            const k = getTargetFieldKey(t)
-            if (!k) continue
-            const v = valueByField[k.toLowerCase()]
-            if (v === undefined) continue
-            onWrite(t.id, v)
-            writeCount += 1
+          if (targets.length === 0) {
+            showFeedback(`未找到 Recipe_DB.DJRecipe[${recipeIndex}] 的已订阅目标标签`)
+            return
           }
-          showFeedback(`已同步 ${writeCount} 个参数到 ${groupKey}`)
+
+          let writeCount = 0
+          let failedCount = 0
+          let skippedCount = 0
+
+          for (const targetTag of targets) {
+            const fieldKey = getTargetFieldKey(targetTag)
+            if (!fieldKey) {
+              skippedCount += 1
+              continue
+            }
+
+            const sourceVarName = DJ_FIELD_MAP[fieldKey.toLowerCase()]
+            if (!sourceVarName) {
+              skippedCount += 1
+              continue
+            }
+
+            if (!targetTag.allowWrite) {
+              failedCount += 1
+              continue
+            }
+
+            let sourceValue = ''
+            if (sourceVarName === 'Local.RecipeName') {
+              const sourceTag = sourceTags.find((tag) => {
+                const candidates = [tag.displayName, tag.browseName, tag.nodeId]
+                return candidates.some((raw) => {
+                  const value = normalizeTagPath(raw ?? '')
+                  return value === 'Local.RecipeName' || value === 'Local.RecipeName[1]'
+                })
+              })
+              if (sourceTag) {
+                const snap = snapshots.get(sourceTag.id)
+                sourceValue = snap?.value !== undefined && snap?.value !== null ? String(snap.value) : ''
+              }
+            } else {
+              const sourceField = sourceVarName.replace('Local.RecipeDJ.', '')
+              const sourceTag = rows.find((row) => row.fieldKey.toLowerCase() === sourceField.toLowerCase())?.tag
+              if (sourceTag) {
+                const snap = getSnapshotOrSimulated(sourceTag, sourceField, snapshots)
+                sourceValue = getSnapshotRawValue(snap)
+              }
+            }
+
+            if (sourceValue === '') {
+              skippedCount += 1
+              continue
+            }
+
+            const succeeded = await onWrite(targetTag.id, sourceValue)
+            if (succeeded) writeCount += 1
+            else failedCount += 1
+          }
+
+          if (writeCount === 0 && failedCount === 0) {
+            showFeedback(`未找到可同步到 Recipe_DB.DJRecipe[${recipeIndex}] 的有效参数`)
+            return
+          }
+
+          if (failedCount > 0) {
+            showFeedback(`同步完成：成功 ${writeCount} 项，失败 ${failedCount} 项，跳过 ${skippedCount} 项`)
+            return
+          }
+
+          showFeedback(`已同步 ${writeCount} 个参数到 Recipe_DB.DJRecipe[${recipeIndex}]${skippedCount > 0 ? `，跳过 ${skippedCount} 项` : ''}`)
         }
+
 
         return (
           <div className="recipe-sheet-head recipe-sync-card">
@@ -870,20 +1002,19 @@ export function RecipeDJ({
               <h3 className="recipe-sheet-title">配方同步</h3>
               <p className="recipe-sheet-subtitle">请核对参数,同步到测试工位</p>
             </div>
-            {hasAnySyncButton ? (
-              <div className="recipe-sheet-actions">
-                {showRecipe1SyncButton ? (
-                  <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo('Device1_Recipe1')}>
-                    {`同步到${recipe1SyncLabel}`}
-                  </button>
-                ) : null}
-                {showRecipe2SyncButton ? (
-                  <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo('Device1_Recipe2')}>
-                    {`同步到${recipe2SyncLabel}`}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
+            <div className="recipe-sheet-actions">
+              {showRecipe1SyncButton ? (
+                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(1)}>
+                  {recipe1SyncLabel || '同步到工位1 (DJRecipe[1])'}
+                </button>
+              ) : null}
+              {showRecipe2SyncButton ? (
+                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(2)}>
+                  {recipe2SyncLabel || '同步到工位2 (DJRecipe[2])'}
+                </button>
+              ) : null}
+            </div>
+
           </div>
         )
       })()}

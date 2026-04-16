@@ -38,6 +38,14 @@ public sealed class SingleTagWriteCoordinator : ISingleTagWriteCoordinator
             throw new InvalidOperationException("This tag is not configured for write operations.");
         }
 
+        _logger.LogInformation(
+            "Tag write requested. Device={DeviceName}, TagId={TagId}, DisplayName={DisplayName}, NodeId={NodeId}, Value={Value}",
+            device.Name,
+            tag.Id,
+            tag.DisplayName,
+            tag.NodeId,
+            JsonSerializer.Serialize(request.Value));
+
         var jsonValue = JsonSerializer.SerializeToElement(request.Value, request.Value?.GetType() ?? typeof(object));
         var previousValue = _runtimeCoordinator.GetSnapshot(tag.Id)?.Value;
         var result = await _runtimeCoordinator.WriteAsync(device, tag, jsonValue, cancellationToken);
@@ -57,6 +65,10 @@ public sealed class SingleTagWriteCoordinator : ISingleTagWriteCoordinator
         if (!result.Succeeded)
         {
             _logger.LogWarning("Tag write failed for {TagId}: {Message}", tag.Id, result.ErrorMessage);
+        }
+        else
+        {
+            _logger.LogInformation("Tag write succeeded for {TagId} with status {StatusCode}", tag.Id, result.StatusCode);
         }
 
         return new WriteOperationResultDto(tag.Id, result.Succeeded, result.StatusCode, result.ErrorMessage);

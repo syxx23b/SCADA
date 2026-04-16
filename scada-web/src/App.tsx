@@ -1,15 +1,22 @@
-﻿import { useEffect, useMemo, useRef, useState } from 'react'
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import type { FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, getSimulatedEfficiencyTimeline, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+
 import { isOpcUaTagStatusOk } from './tagStatus'
-import type { BrowseNode, DeviceConnection, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
+import type { BrowseNode, DeviceConnection, EfficiencyTimelineResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
+import { EfficiencyAnalysis } from './components/EfficiencyAnalysis'
 import { RecipeDJ } from './components/RecipeDJ'
 import { RecipeQYJ } from './components/RecipeQYJ'
 
-type ViewKey = 'dashboard' | 'runtime' | 'tags' | 'recipeDj' | 'recipeQyj' | 'help' | 'login'
+
+
+
+type ViewKey = 'dashboard' | 'efficiency' | 'runtime' | 'tags' | 'recipeDj' | 'recipeQyj' | 'help' | 'login'
 type SidebarKey = ViewKey | 'report'
+
 type RecipeTypeKey = 'DJRecipe' | 'QYJRecipe'
 type RuntimeStatus = { label: '正常' | '异常'; className: 'normal' | 'fault' }
 
@@ -17,9 +24,12 @@ type HistoryPoint = { ts: number; value: number }
 type DashboardField = { tag?: TagDefinition; snapshot?: TagSnapshot; healthy: boolean; numeric: number | null; text: string; emptyText: string }
 type FaceplateTrend = { pressure: HistoryPoint[]; flow: HistoryPoint[] }
 type SidebarItem = { key: SidebarKey; label: string; icon: string }
+type WriteOptions = { refreshRuntime?: boolean; successMessage?: string | null }
+
 
 const baseSidebarItems: SidebarItem[] = [
   { key: 'dashboard', label: 'Dashboard', icon: '◉' },
+  { key: 'efficiency', label: '效率分析', icon: '▤' },
   { key: 'recipeDj', label: '配方-电机泵', icon: '◆' },
   { key: 'recipeQyj', label: '配方-汽油机', icon: '◇' },
   { key: 'report', label: 'Report', icon: '◌' },
@@ -36,8 +46,9 @@ const dashboardFaceplateIndexes = [1, 2] as const
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'batch') return 'tags'
-  return value === 'dashboard' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'help' || value === 'login' ? value : 'dashboard'
+  return value === 'dashboard' || value === 'efficiency' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'help' || value === 'login' ? value : 'dashboard'
 }
+
 
 
 function getDisplayName(nodeId: string) {
@@ -154,12 +165,22 @@ function sortGroupOptions(values: Iterable<string>) {
   return ['all', ...options]
 }
 
-function detectLocalRecipeType(tag: TagDefinition): RecipeTypeKey | null {
+function detectLocalRecipeType(tag: TagDefinition, activeType?: RecipeTypeKey): RecipeTypeKey | null {
   const candidates = [tag.displayName, tag.browseName, getDisplayName(tag.nodeId)]
 
   for (const rawValue of candidates) {
     const value = (rawValue ?? '').trim()
     if (!value) continue
+
+    // 配方名称标签 - 根据当前活动类型返回
+    if (
+      /^Local\.RecipeName/i.test(value) ||
+      /^Local\.Recipe_DB\.RecipeName/i.test(value) ||
+      /^Local\.Recipe_DB_RecipeName/i.test(value) ||
+      /^LocalVariable\.RecipeName/i.test(value)
+    ) {
+      return activeType ?? 'DJRecipe'
+    }
 
     if (
       /^Local\.RecipeDJ\./i.test(value) ||
@@ -556,7 +577,9 @@ function App() {
   const [selectedBrowseNodes, setSelectedBrowseNodes] = useState<BrowseNode[]>([])
   const [batchDrafts, setBatchDrafts] = useState<TagFormState[]>([])
   const batchSectionRef = useRef<HTMLElement | null>(null)
+  const efficiencyRequestPendingRef = useRef(false)
   const [dashboardTrendByFaceplate, setDashboardTrendByFaceplate] = useState<Record<number, FaceplateTrend>>({
+
     1: { pressure: [], flow: [] },
     2: { pressure: [], flow: [] },
   })
@@ -590,8 +613,11 @@ function App() {
   // 当前加载的配方名称（用于更新子组件输入框）
   const [djLoadedRecipeName, setDjLoadedRecipeName] = useState<string>('')
   const [qyjLoadedRecipeName, setQyjLoadedRecipeName] = useState<string>('')
+  const [efficiencyTimeline, setEfficiencyTimeline] = useState<EfficiencyTimelineResponse | null>(null)
+  const [efficiencyLoading, setEfficiencyLoading] = useState(false)
 
   const showStatus = (message: string) => {
+
     setStatusMessage(message)
   }
 
@@ -625,7 +651,39 @@ function App() {
     void loadRecipes()
   }, [])
 
+  const loadEfficiencyTimeline = useCallback(async (options?: { silent?: boolean }) => {
+    if (efficiencyRequestPendingRef.current) return
+
+    const silent = options?.silent ?? false
+
+    try {
+      efficiencyRequestPendingRef.current = true
+      if (!silent) {
+        setEfficiencyLoading(true)
+      }
+
+      const response = await getSimulatedEfficiencyTimeline(24)
+      setEfficiencyTimeline(response)
+
+      if (!silent) {
+        setStatusMessage('效率分析仿真数据已刷新')
+      }
+
+    } catch (error) {
+      if (!silent) {
+        setStatusMessage(error instanceof Error ? error.message : '效率分析刷新失败')
+      }
+    } finally {
+      if (!silent) {
+        setEfficiencyLoading(false)
+      }
+
+      efficiencyRequestPendingRef.current = false
+    }
+  }, [])
+
   // 处理保存DJ配方
+
   const handleSaveDJRecipe = async (recipeName: string, recipeData: Record<string, string>) => {
     const trimmedRecipeName = recipeName.trim()
     if (!trimmedRecipeName) {
@@ -657,10 +715,11 @@ function App() {
       setDjLoadedRecipeName(trimmedRecipeName)
 
       if (activeRecipeNameTag?.id && activeRecipeNameTag.allowWrite) {
-        void handleWrite(activeRecipeNameTag.id, trimmedRecipeName)
+        await handleWrite(activeRecipeNameTag.id, trimmedRecipeName, { successMessage: null })
       }
 
       return true
+
     } catch (error) {
       console.error('保存配方失败:', error)
       showStatus(`保存配方失败: ${error instanceof Error ? error.message : '未知错误'}`)
@@ -701,10 +760,11 @@ function App() {
       setQyjLoadedRecipeName(trimmedRecipeName)
 
       if (activeRecipeNameTag?.id && activeRecipeNameTag.allowWrite) {
-        void handleWrite(activeRecipeNameTag.id, trimmedRecipeName)
+        await handleWrite(activeRecipeNameTag.id, trimmedRecipeName, { successMessage: null })
       }
 
       return true
+
     } catch (error) {
       console.error('保存配方失败:', error)
       showStatus(`保存配方失败: ${error instanceof Error ? error.message : '未知错误'}`)
@@ -723,19 +783,32 @@ function App() {
 
     try {
       const detail = await getRecipe(fileId)
+      let successCount = 0
+      let failedCount = 0
 
-      Object.entries(detail.items).forEach(([tagId, value]) => {
-        if (tagId === activeRecipeNameTag?.id) return
-        void handleWrite(tagId, value)
-      })
+      for (const [tagId, value] of Object.entries(detail.items)) {
+        if (tagId === activeRecipeNameTag?.id) continue
+        const succeeded = await handleWrite(tagId, value, { successMessage: null })
+        if (succeeded) successCount += 1
+        else failedCount += 1
+      }
 
       setDjLoadedRecipeName(file.name)
       if (activeRecipeNameTag?.id && activeRecipeNameTag.allowWrite) {
-        void handleWrite(activeRecipeNameTag.id, file.name)
+        const nameWriteSucceeded = await handleWrite(activeRecipeNameTag.id, file.name, { successMessage: null })
+        if (!nameWriteSucceeded) {
+          failedCount += 1
+        }
       }
 
-      showStatus(`配方 "${file.name}" 已加载`)
+      if (failedCount > 0) {
+        showStatus(`配方 "${file.name}" 加载完成，但有 ${failedCount} 项写入失败`)
+        return false
+      }
+
+      showStatus(`配方 "${file.name}" 已加载，成功写入 ${successCount} 项`)
       return true
+
     } catch (error) {
       console.error('加载配方失败:', error)
       showStatus(`加载配方失败: ${error instanceof Error ? error.message : '未知错误'}`)
@@ -754,18 +827,30 @@ function App() {
 
     try {
       const detail = await getRecipe(fileId)
+      let successCount = 0
+      let failedCount = 0
 
-      Object.entries(detail.items).forEach(([tagId, value]) => {
-        if (tagId === activeRecipeNameTag?.id) return
-        void handleWrite(tagId, value)
-      })
+      for (const [tagId, value] of Object.entries(detail.items)) {
+        if (tagId === activeRecipeNameTag?.id) continue
+        const succeeded = await handleWrite(tagId, value, { successMessage: null })
+        if (succeeded) successCount += 1
+        else failedCount += 1
+      }
 
       setQyjLoadedRecipeName(file.name)
       if (activeRecipeNameTag?.id && activeRecipeNameTag.allowWrite) {
-        void handleWrite(activeRecipeNameTag.id, file.name)
+        const nameWriteSucceeded = await handleWrite(activeRecipeNameTag.id, file.name, { successMessage: null })
+        if (!nameWriteSucceeded) {
+          failedCount += 1
+        }
       }
 
-      showStatus(`配方 "${file.name}" 已加载`)
+      if (failedCount > 0) {
+        showStatus(`配方 "${file.name}" 加载完成，但有 ${failedCount} 项写入失败`)
+        return false
+      }
+
+      showStatus(`配方 "${file.name}" 已加载，成功写入 ${successCount} 项`)
       return true
     } catch (error) {
       console.error('加载配方失败:', error)
@@ -773,6 +858,7 @@ function App() {
       return false
     }
   }
+
 
 
   // 处理删除DJ配方
@@ -1088,7 +1174,7 @@ function App() {
   }, [filteredRuntimeTags, runtimeDeviceStatusById, runtimeNameById, snapshotByTagId])
 
   const recipeRows = useMemo(() => {
-    const source = runtime.tags.filter((tag) => isLocalRecipeScopedTag(tag) && detectLocalRecipeType(tag) === activeRecipeType)
+    const source = runtime.tags.filter((tag) => isLocalRecipeScopedTag(tag) && detectLocalRecipeType(tag, activeRecipeType) === activeRecipeType)
 
 
     return source.map((tag, index) => {
@@ -1229,7 +1315,19 @@ function App() {
   useEffect(() => { void loadWorkspace() }, [])
 
   useEffect(() => {
+    if (view !== 'efficiency') return
+
+    void loadEfficiencyTimeline()
+    const timer = window.setInterval(() => {
+      void loadEfficiencyTimeline({ silent: true })
+    }, 5000)
+
+    return () => window.clearInterval(timer)
+  }, [loadEfficiencyTimeline, view])
+
+  useEffect(() => {
     const connection = new HubConnectionBuilder().withUrl('/hubs/realtime').withAutomaticReconnect().configureLogging(LogLevel.Information).build()
+
     connection.on('tagSnapshotUpdated', (snapshot: TagSnapshot) => {
       setRuntime((current) => ({ ...current, snapshots: [...current.snapshots.filter((item) => item.tagId !== snapshot.tagId), snapshot] }))
     })
@@ -1264,21 +1362,35 @@ function App() {
     })
   }
 
-  async function handleWrite(tagId: string, value?: string) {
+  async function handleWrite(tagId: string, value?: string, options?: WriteOptions) {
     const valueToWrite = value ?? writeDrafts[tagId]
-    if (valueToWrite === undefined || valueToWrite.trim() === '') return setStatusMessage('请输入要写入的值')
+    if (valueToWrite === undefined || valueToWrite.trim() === '') {
+      setStatusMessage('请输入要写入的值')
+      return false
+    }
+
     try {
       setSavingTagId(tagId)
       await writeTag(tagId, valueToWrite)
       setWriteDrafts((current) => ({ ...current, [tagId]: '' }))
-      setStatusMessage('写入成功')
-      await refreshRuntime()
+
+      if (options?.successMessage !== null) {
+        setStatusMessage(options?.successMessage ?? '写入成功')
+      }
+
+      if (options?.refreshRuntime !== false) {
+        await refreshRuntime()
+      }
+
+      return true
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : '写入失败')
+      return false
     } finally {
       setSavingTagId(null)
     }
   }
+
 
   function toggleFolder(node: BrowseNode) {
     setExpandedBrowseNodes((current) => {
@@ -1807,7 +1919,19 @@ function App() {
       </section>
     </section>
   )
+
+  const efficiencyPage = (
+    <>
+      <EfficiencyAnalysis
+        data={efficiencyTimeline}
+        loading={efficiencyLoading}
+      />
+      <div className="toast-line">{statusMessage}</div>
+    </>
+  )
+
   function matchesBrowseNode(node: BrowseNode) {
+
     const keyword = browserSearch.trim().toLowerCase()
     if (!keyword) return true
     return [node.displayName, node.browseName, node.nodeId, node.dataType ?? ''].some((item) => item.toLowerCase().includes(keyword))
@@ -2066,9 +2190,12 @@ function App() {
       <section className="content-strip recipe-content">
         {activeRecipeType === 'DJRecipe' ? (
           <RecipeDJ
-            tags={recipeRows.map(r => r.tag)}
+            sourceTags={recipeRows.map(r => r.tag)}
+            allTags={runtime.tags}
             snapshots={snapshotByTagId}
-            onWrite={(tagId, value) => void handleWrite(tagId, value)}
+
+            onWrite={(tagId, value) => handleWrite(tagId, value, { successMessage: null })}
+
             savingTagId={savingTagId}
             savedRecipes={djRecipeFiles}
             onSaveRecipe={handleSaveDJRecipe}
@@ -2083,11 +2210,14 @@ function App() {
 
         ) : (
           <RecipeQYJ
-            tags={recipeRows.map(r => r.tag)}
+            sourceTags={recipeRows.map(r => r.tag)}
+            allTags={runtime.tags}
             snapshots={snapshotByTagId}
-            onWrite={(tagId, value) => void handleWrite(tagId, value)}
+
+            onWrite={(tagId, value) => handleWrite(tagId, value, { successMessage: null })}
             savingTagId={savingTagId}
             savedRecipes={qyjRecipeFiles}
+
             onSaveRecipe={handleSaveQYJRecipe}
             onLoadRecipe={handleLoadQYJRecipe}
             onDeleteRecipe={handleDeleteQYJRecipe}
@@ -2179,7 +2309,9 @@ function App() {
   )
 
   if (view === 'dashboard') return <div className="app-shell">{sidebarShell}<main className="workspace">{dashboardPage}</main></div>
+  if (view === 'efficiency') return <div className="app-shell">{sidebarShell}<main className="workspace">{efficiencyPage}</main></div>
   if (view === 'runtime') return isAuthenticated ? runtimePage : <div className="app-shell">{sidebarShell}<main className="workspace">{loginPage}</main></div>
+
   if (view === 'tags') return <div className="app-shell">{sidebarShell}<main className="workspace">{isAuthenticated ? tagsPage : loginPage}</main></div>
   if (view === 'recipeDj' || view === 'recipeQyj') return <div className="app-shell">{sidebarShell}<main className="workspace">{recipePage}</main></div>
   return <div className="app-shell">{sidebarShell}<main className="workspace">{view === 'help' ? helpPage : loginPage}</main></div>

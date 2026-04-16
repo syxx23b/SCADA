@@ -87,7 +87,35 @@ export interface RuntimeOverview {
   snapshots: TagSnapshot[]
 }
 
+export interface EfficiencyTimelineSegment {
+  faceplateIndex: number
+  stationName: string
+  stateKey: 'disconnected' | 'standby' | 'running' | 'fault'
+  stateLabel: string
+  colorHex: string
+  startedAt: string
+  endedAt: string
+  isDemo: boolean
+}
+
+export interface EfficiencyTimelineLane {
+  faceplateIndex: number
+  stationName: string
+  currentStateKey: 'disconnected' | 'standby' | 'running' | 'fault'
+  currentStateLabel: string
+  currentColorHex: string
+  segments: EfficiencyTimelineSegment[]
+}
+
+export interface EfficiencyTimelineResponse {
+  windowStart: string
+  windowEnd: string
+  generatedAt: string
+  lanes: EfficiencyTimelineLane[]
+}
+
 export interface DeviceStatusChanged {
+
   deviceId: string
   status: string
   message: string

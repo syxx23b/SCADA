@@ -11,9 +11,12 @@ interface RecipeFile {
 }
 
 interface RecipeQYJProps {
-  tags: TagDefinition[]
+  sourceTags: TagDefinition[]
+  allTags: TagDefinition[]
   snapshots: Map<string, TagSnapshot>
-  onWrite: (tagId: string, value: string) => void
+
+  onWrite: (tagId: string, value: string) => Promise<boolean>
+
   savingTagId: string | null
   savedRecipes: RecipeFile[]
   onSaveRecipe: (recipeName: string, recipeData: Record<string, string>) => Promise<boolean>
@@ -176,12 +179,19 @@ const QYJ_FIELD_PATTERNS = [
   /^LocalVariable\.QYJRecipe\.(.+)$/i,
 ] as const
 
+function normalizeTagPath(rawValue: string) {
+  const trimmed = rawValue.trim()
+  const nodeIdIndex = trimmed.indexOf(';s=')
+  return nodeIdIndex >= 0 ? trimmed.slice(nodeIdIndex + 3) : trimmed
+}
+
 function extractFieldKey(tag: TagDefinition) {
   const candidates = [tag.displayName, tag.browseName, tag.nodeId]
 
   for (const rawValue of candidates) {
-    const value = (rawValue ?? '').trim()
+    const value = normalizeTagPath(rawValue ?? '')
     if (!value) continue
+
 
     for (const pattern of QYJ_FIELD_PATTERNS) {
       const match = value.match(pattern)
@@ -315,9 +325,10 @@ function ValueEditor({
   tag: TagDefinition
   fieldKey: string
   valueText: string
-  onWrite: (tagId: string, value: string) => void
+  onWrite: (tagId: string, value: string) => Promise<boolean>
   savingTagId: string | null
 }) {
+
   const options = getFieldOptions(fieldKey)
   const currentValue = options ? resolveDictionaryValue(fieldKey, valueText) : valueText === '—' ? '' : valueText
   const [draft, setDraft] = useState(currentValue)
@@ -326,11 +337,14 @@ function ValueEditor({
     setDraft(currentValue)
   }, [currentValue, tag.id])
 
+  // 型号字段只读
+  if (fieldKey.toLowerCase() === 'recipename') return <span className="recipe-readonly recipe-readonly-value">{valueText}</span>
+
   if (!tag.allowWrite) return <span className="recipe-readonly recipe-readonly-value">{valueText}</span>
 
   const disabled = savingTagId === tag.id
   const commit = () => {
-    const nextValue = fieldKey.toLowerCase() === 'recipename' ? draft.trim() : normalizeNumericText(draft)
+    const nextValue = normalizeNumericText(draft)
     if (nextValue !== draft) {
       setDraft(nextValue)
     }
@@ -432,7 +446,8 @@ function ValueEditor({
 }
 
 export function RecipeQYJ({
-  tags,
+  sourceTags,
+  allTags,
   snapshots,
   onWrite,
   savingTagId,
@@ -446,6 +461,7 @@ export function RecipeQYJ({
   recipe1SyncLabel,
   recipe2SyncLabel,
 }: RecipeQYJProps) {
+
   // 配方名称输入框状态（独立于型号标签）
   const [recipeFileName, setRecipeFileName] = useState('')
 
@@ -546,7 +562,8 @@ export function RecipeQYJ({
 
 
   const rows = useMemo(() => {
-    const fieldRows = tags
+    const fieldRows = sourceTags
+
       .map((tag) => {
         const fieldKey = extractFieldKey(tag)
         if (!fieldKey) return null
@@ -568,7 +585,8 @@ export function RecipeQYJ({
       .filter((row): row is RecipeRow => row !== null)
 
     return fieldRows.sort(compareRows)
-  }, [snapshots, tags])
+  }, [snapshots, sourceTags])
+
 
 
 
@@ -633,7 +651,16 @@ export function RecipeQYJ({
               className="recipe-filename-input"
               placeholder="输入配方名"
               value={recipeFileName}
-              onChange={(e) => setRecipeFileName(e.target.value)}
+              onChange={(e) => {
+                let value = e.target.value
+                // 配方名：限制最大16字符，禁止中文
+                value = value.replace(/[\u4e00-\u9fa5]/g, '')
+                if (value.length > 16) {
+                  value = value.slice(0, 16)
+                }
+                setRecipeFileName(value)
+              }}
+              maxLength={16}
               aria-label="配方名"
             />
             <button type="button" className="recipe-btn recipe-btn-new" onClick={handleNewRecipe}>
@@ -745,48 +772,142 @@ export function RecipeQYJ({
         ))}
       </div>
 
+      {/* 配方同步区域 */}
       {(() => {
-        const hasAnySyncButton = showRecipe1SyncButton || showRecipe2SyncButton
+        // QYJ配方同步目标：Recipe_DB.QYJRecipe[1] 和 Recipe_DB.QYJRecipe[2]
+        // 源字段：Local.RecipeQYJ.xxx -> 目标字段：Recipe_DB.QYJRecipe[1].xxx / Recipe_DB.QYJRecipe[2].xxx
 
         const getTargetFieldKey = (tag: TagDefinition): string | null => {
           const candidates = [tag.displayName, tag.browseName, tag.nodeId]
           const patterns = [
-            /^Device1[._]Recipe1\.?(.+)$/i,
-            /^Device1[._]Recipe2\.?(.+)$/i,
-            /^Device1_Recipe1(?:\[\d+\])?_(.+)$/i,
-            /^Device1_Recipe2(?:\[\d+\])?_(.+)$/i,
+            /^Recipe_DB\.(?:QYJRecipe|QYIRecipe)\[(\d+)\]\.(.+)$/i,
+            /^Recipe_DB_(?:QYJRecipe|QYIRecipe)(?:\[(\d+)\])?_(.+)$/i,
           ] as const
           for (const raw of candidates) {
-            const v = (raw ?? '').trim()
+            const v = normalizeTagPath(raw ?? '')
             if (!v) continue
             for (const p of patterns) {
               const m = v.match(p)
-              if (m) return m[1].trim().replace(/^_+/, '')
+              if (m) {
+                return m[2].trim().replace(/^_+/, '')
+              }
             }
           }
           return null
         }
 
-        const syncTo = async (groupKey: 'Device1_Recipe1' | 'Device1_Recipe2') => {
-          const valueByField: Record<string, string> = {}
-          rows.forEach((r) => {
-            const snap = getSnapshotOrSimulated(r.tag, r.fieldKey, snapshots)
-            const raw = getSnapshotRawValue(snap)
-            if (raw !== '') valueByField[r.fieldKey.toLowerCase()] = raw
+
+        // QYJ配方字段映射表（规则1使用 Local.RecipeName，其他使用 Local.RecipeQYJ.xxx）
+        const QYJ_FIELD_MAP: Record<string, string> = {
+          'recipename': 'Local.RecipeName',
+          'autospeed': 'Local.RecipeQYJ.AutoSpeed',
+          'motordir': 'Local.RecipeQYJ.motorDir',
+          'barcodelength': 'Local.RecipeQYJ.barcodeLength',
+          'nobarcodestart': 'Local.RecipeQYJ.noBarcodeStart',
+          'inletcleantime': 'Local.RecipeQYJ.inletCleanTime',
+          'triggerontime': 'Local.RecipeQYJ.triggerOnTime',
+          'triggerofftime': 'Local.RecipeQYJ.triggerOffTime',
+          'triggercount': 'Local.RecipeQYJ.triggerCount',
+          'siphontime': 'Local.RecipeQYJ.siphonTime',
+          'siphon': 'Local.RecipeQYJ.siphon',
+          'pressureholdtime': 'Local.RecipeQYJ.pressureHoldTime',
+          'holdingpressuredrop': 'Local.RecipeQYJ.holdingPressureDrop',
+          'blowtime': 'Local.RecipeQYJ.blowTime',
+          'endurancetime': 'Local.RecipeQYJ.enduranceTime',
+          'endurancetriggerontime': 'Local.RecipeQYJ.enduranceTriggerOnTime',
+          'endurancetriggerofftime': 'Local.RecipeQYJ.enduranceTriggerOffTime',
+          'pressureholdinginterval': 'Local.RecipeQYJ.pressureHoldingInterval',
+          'enduranceinletmonitor': 'Local.RecipeQYJ.enduranceInletMonitor',
+          'datauploadfrequency': 'Local.RecipeQYJ.dataUploadFrequency',
+          'pressuremin': 'Local.RecipeQYJ.pressureMin',
+          'pressuremax': 'Local.RecipeQYJ.pressureMax',
+          'holdingpressuremin': 'Local.RecipeQYJ.holdingPressureMin',
+          'holdingpressuremax': 'Local.RecipeQYJ.holdingPressureMax',
+          'flowmin': 'Local.RecipeQYJ.flowMin',
+          'flowmax': 'Local.RecipeQYJ.flowMax',
+        }
+
+        const syncTo = async (recipeIndex: 1 | 2) => {
+          const targets = allTags.filter((tag) => {
+            const candidates = [tag.displayName, tag.browseName, tag.nodeId]
+            return candidates.some((raw) => {
+              const value = normalizeTagPath(raw ?? '').toLowerCase()
+              return value.includes(`recipe_db.qyjrecipe[${recipeIndex}].`) || value.includes(`recipe_db.qyirecipe[${recipeIndex}].`)
+            })
           })
 
-          const targets = tags.filter(t => (t.groupKey ?? '').toLowerCase() === groupKey.toLowerCase())
-          let writeCount = 0
-          for (const t of targets) {
-            const k = getTargetFieldKey(t)
-            if (!k) continue
-            const v = valueByField[k.toLowerCase()]
-            if (v === undefined) continue
-            onWrite(t.id, v)
-            writeCount += 1
+          if (targets.length === 0) {
+            showFeedback(`未找到 Recipe_DB.QYJRecipe[${recipeIndex}] 的已订阅目标标签`)
+            return
           }
-          showFeedback(`已同步 ${writeCount} 个参数到 ${groupKey}`)
+
+          let writeCount = 0
+          let failedCount = 0
+          let skippedCount = 0
+
+          for (const targetTag of targets) {
+            const fieldKey = getTargetFieldKey(targetTag)
+            if (!fieldKey) {
+              skippedCount += 1
+              continue
+            }
+
+            const sourceVarName = QYJ_FIELD_MAP[fieldKey.toLowerCase()]
+            if (!sourceVarName) {
+              skippedCount += 1
+              continue
+            }
+
+            if (!targetTag.allowWrite) {
+              failedCount += 1
+              continue
+            }
+
+            let sourceValue = ''
+            if (sourceVarName === 'Local.RecipeName') {
+              const sourceTag = sourceTags.find((tag) => {
+                const candidates = [tag.displayName, tag.browseName, tag.nodeId]
+                return candidates.some((raw) => {
+                  const value = normalizeTagPath(raw ?? '')
+                  return value === 'Local.RecipeName' || value === 'Local.RecipeName[1]'
+                })
+              })
+              if (sourceTag) {
+                const snap = snapshots.get(sourceTag.id)
+                sourceValue = snap?.value !== undefined && snap?.value !== null ? String(snap.value) : ''
+              }
+            } else {
+              const sourceField = sourceVarName.replace('Local.RecipeQYJ.', '')
+              const sourceTag = rows.find((row) => row.fieldKey.toLowerCase() === sourceField.toLowerCase())?.tag
+              if (sourceTag) {
+                const snap = getSnapshotOrSimulated(sourceTag, sourceField, snapshots)
+                sourceValue = getSnapshotRawValue(snap)
+              }
+            }
+
+            if (sourceValue === '') {
+              skippedCount += 1
+              continue
+            }
+
+            const succeeded = await onWrite(targetTag.id, sourceValue)
+            if (succeeded) writeCount += 1
+            else failedCount += 1
+          }
+
+          if (writeCount === 0 && failedCount === 0) {
+            showFeedback(`未找到可同步到 Recipe_DB.QYJRecipe[${recipeIndex}] 的有效参数`)
+            return
+          }
+
+          if (failedCount > 0) {
+            showFeedback(`同步完成：成功 ${writeCount} 项，失败 ${failedCount} 项，跳过 ${skippedCount} 项`)
+            return
+          }
+
+          showFeedback(`已同步 ${writeCount} 个参数到 Recipe_DB.QYJRecipe[${recipeIndex}]${skippedCount > 0 ? `，跳过 ${skippedCount} 项` : ''}`)
         }
+
 
         return (
           <div className="recipe-sheet-head recipe-sync-card">
@@ -794,20 +915,19 @@ export function RecipeQYJ({
               <h3 className="recipe-sheet-title">配方同步</h3>
               <p className="recipe-sheet-subtitle">请核对参数,同步到测试工位</p>
             </div>
-            {hasAnySyncButton ? (
-              <div className="recipe-sheet-actions">
-                {showRecipe1SyncButton ? (
-                  <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo('Device1_Recipe1')}>
-                    {`同步到${recipe1SyncLabel}`}
-                  </button>
-                ) : null}
-                {showRecipe2SyncButton ? (
-                  <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo('Device1_Recipe2')}>
-                    {`同步到${recipe2SyncLabel}`}
-                  </button>
-                ) : null}
-              </div>
-            ) : null}
+            <div className="recipe-sheet-actions">
+              {showRecipe1SyncButton ? (
+                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(1)}>
+                  {recipe1SyncLabel || '同步到工位1 (QYJRecipe[1])'}
+                </button>
+              ) : null}
+              {showRecipe2SyncButton ? (
+                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(2)}>
+                  {recipe2SyncLabel || '同步到工位2 (QYJRecipe[2])'}
+                </button>
+              ) : null}
+            </div>
+
           </div>
         )
       })()}

@@ -90,7 +90,35 @@ public sealed class WriteAuditEntity
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public enum EfficiencyStateKind
+{
+    Disconnected = 0,
+    Standby = 1,
+    Running = 2,
+    Fault = 3
+}
+
+public sealed class EfficiencyTimelineSegmentEntity
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+
+    public int FaceplateIndex { get; set; }
+
+    public string StationName { get; set; } = string.Empty;
+
+    public EfficiencyStateKind State { get; set; } = EfficiencyStateKind.Disconnected;
+
+    public DateTimeOffset StartedAt { get; set; }
+
+    public DateTimeOffset EndedAt { get; set; }
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+    public bool IsDemo { get; set; }
+}
+
 // 配方定义实体
+
 public sealed class RecipeEntity
 {
     public Guid Id { get; set; } = Guid.NewGuid();

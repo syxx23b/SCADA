@@ -16,7 +16,10 @@ public sealed class ScadaDbContext : DbContext
 
     public DbSet<WriteAuditEntity> WriteAudits => Set<WriteAuditEntity>();
 
+    public DbSet<EfficiencyTimelineSegmentEntity> EfficiencyTimelineSegments => Set<EfficiencyTimelineSegmentEntity>();
+
     public DbSet<RecipeEntity> Recipes => Set<RecipeEntity>();
+
 
     public DbSet<RecipeItemEntity> RecipeItems => Set<RecipeItemEntity>();
 
@@ -58,7 +61,17 @@ public sealed class ScadaDbContext : DbContext
             entity.Property(item => item.Message).HasMaxLength(1000);
         });
 
+        modelBuilder.Entity<EfficiencyTimelineSegmentEntity>(entity =>
+        {
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.StationName).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.State).HasConversion<string>().HasMaxLength(24).IsRequired();
+            entity.HasIndex(item => new { item.FaceplateIndex, item.StartedAt });
+            entity.HasIndex(item => new { item.FaceplateIndex, item.EndedAt });
+        });
+
         modelBuilder.Entity<RecipeEntity>(entity =>
+
         {
             entity.HasKey(item => item.Id);
             entity.Property(item => item.Name).HasMaxLength(200).IsRequired();

@@ -43,9 +43,12 @@ builder.Services.AddSingleton<TagSnapshotCache>();
 builder.Services.AddSingleton<RealtimeNotifier>();
 builder.Services.AddSingleton<IOpcUaSessionClientFactory, OpcUaSessionClientFactory>();
 builder.Services.AddSingleton<IScadaRuntimeCoordinator, ScadaRuntimeCoordinator>();
+builder.Services.AddSingleton<IEfficiencyAnalysisService, EfficiencyAnalysisService>();
 builder.Services.AddScoped<ISingleTagWriteCoordinator, SingleTagWriteCoordinator>();
 builder.Services.AddSingleton<IBatchWriteCoordinator, BatchWriteCoordinator>();
 builder.Services.AddHostedService<StartupConnectionInitializerHostedService>();
+builder.Services.AddHostedService<EfficiencyTimelineCollectorHostedService>();
+
 
 var app = builder.Build();
 
@@ -123,4 +126,24 @@ static void EnsureRecipeTables(ScadaDbContext dbContext)
     dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_RecipeItems_RecipeId_FieldKey ON RecipeItems (RecipeId, FieldKey);");
 }
 
+static void EnsureEfficiencyTables(ScadaDbContext dbContext)
+{
+    dbContext.Database.ExecuteSqlRaw("""
+        CREATE TABLE IF NOT EXISTS EfficiencyTimelineSegments (
+            Id TEXT NOT NULL CONSTRAINT PK_EfficiencyTimelineSegments PRIMARY KEY,
+            FaceplateIndex INTEGER NOT NULL,
+            StationName TEXT NOT NULL,
+            State TEXT NOT NULL,
+            StartedAt TEXT NOT NULL,
+            EndedAt TEXT NOT NULL,
+            UpdatedAt TEXT NOT NULL,
+            IsDemo INTEGER NOT NULL DEFAULT 0
+        );
+        """);
+
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_EfficiencyTimelineSegments_FaceplateIndex_StartedAt ON EfficiencyTimelineSegments (FaceplateIndex, StartedAt);");
+    dbContext.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_EfficiencyTimelineSegments_FaceplateIndex_EndedAt ON EfficiencyTimelineSegments (FaceplateIndex, EndedAt);");
+}
+
 public partial class Program;
+

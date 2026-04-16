@@ -144,7 +144,32 @@ public sealed record UpdateRecipeRequest(
     string Description,
     Dictionary<string, string> Items);
 
+public sealed record EfficiencyTimelineSegmentDto(
+    int FaceplateIndex,
+    string StationName,
+    string StateKey,
+    string StateLabel,
+    string ColorHex,
+    DateTimeOffset StartedAt,
+    DateTimeOffset EndedAt,
+    bool IsDemo);
+
+public sealed record EfficiencyTimelineLaneDto(
+    int FaceplateIndex,
+    string StationName,
+    string CurrentStateKey,
+    string CurrentStateLabel,
+    string CurrentColorHex,
+    IReadOnlyList<EfficiencyTimelineSegmentDto> Segments);
+
+public sealed record EfficiencyTimelineResponseDto(
+    DateTimeOffset WindowStart,
+    DateTimeOffset WindowEnd,
+    DateTimeOffset GeneratedAt,
+    IReadOnlyList<EfficiencyTimelineLaneDto> Lanes);
+
 public static class ScadaDtoMapper
+
 {
     public static DeviceConnectionDto ToDto(this DeviceConnectionEntity entity)
     {
