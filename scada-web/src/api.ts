@@ -227,15 +227,6 @@ function saveToStorage() {
 }
 
 // 伪随机数生成器
-function createSeededRandom(seed: number) {
-  let value = Math.floor(seed) % 2_147_483_647
-  if (value <= 0) value += 2_147_483_646
-  return () => {
-    value = (value * 16_807) % 2_147_483_647
-    return (value - 1) / 2_147_483_646
-  }
-}
-
 // 状态轮流顺序: 未工作 → 待机 → 测试中 → 报警处理 → 未工作...
 const STATE_CYCLE: EfficiencySimulationStateKey[] = ['disconnected', 'standby', 'running', 'fault']
 const STATE_CYCLE_REVERSE: EfficiencySimulationStateKey[] = ['disconnected', 'fault', 'running', 'standby']

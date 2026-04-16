@@ -60,6 +60,7 @@ using (var scope = app.Services.CreateScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<ScadaDbContext>();
     dbContext.Database.EnsureCreated();
     EnsureRecipeTables(dbContext);
+    EnsureEfficiencyTables(dbContext);
     app.Logger.LogInformation("Database initialized successfully");
 }
 

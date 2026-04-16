@@ -3,7 +3,7 @@
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import type { FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, getSimulatedEfficiencyTimeline, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
 
 import { isOpcUaTagStatusOk } from './tagStatus'
 import type { BrowseNode, DeviceConnection, EfficiencyTimelineResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
@@ -23,22 +23,77 @@ type RuntimeStatus = { label: '正常' | '异常'; className: 'normal' | 'fault'
 type HistoryPoint = { ts: number; value: number }
 type DashboardField = { tag?: TagDefinition; snapshot?: TagSnapshot; healthy: boolean; numeric: number | null; text: string; emptyText: string }
 type FaceplateTrend = { pressure: HistoryPoint[]; flow: HistoryPoint[] }
-type SidebarItem = { key: SidebarKey; label: string; icon: string }
+type SidebarItem = { key: SidebarKey; label: string; icon: ReactNode }
 type WriteOptions = { refreshRuntime?: boolean; successMessage?: string | null }
+
+function EfficiencySidebarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2.5 2.5V13.5H13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4.5 10L7.2 7.3L9.2 9.3L12 5.8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="4.5" cy="10" r="0.8" fill="currentColor" />
+      <circle cx="7.2" cy="7.3" r="0.8" fill="currentColor" />
+      <circle cx="9.2" cy="9.3" r="0.8" fill="currentColor" />
+      <circle cx="12" cy="5.8" r="0.8" fill="currentColor" />
+    </svg>
+  )
+}
+
+function ReportSidebarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="11" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M4.5 6H9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M4.5 9H9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M10.8 11.6L14.2 8.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function DownloadSidebarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 2.2V9.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M5.4 7.2L8 9.8L10.6 7.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M3 12.8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function UserLoginSidebarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="8" cy="5.2" r="2.3" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M3.4 12.5C4.1 10.3 5.8 9.2 8 9.2C10.2 9.2 11.9 10.3 12.6 12.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
+  return collapsed ? (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M5 3.5L8.5 7L5 10.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ) : (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M9 3.5L5.5 7L9 10.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 
 const baseSidebarItems: SidebarItem[] = [
-  { key: 'dashboard', label: 'Dashboard', icon: '◉' },
-  { key: 'efficiency', label: '效率分析', icon: '▤' },
-  { key: 'recipeDj', label: '配方-电机泵', icon: '◆' },
-  { key: 'recipeQyj', label: '配方-汽油机', icon: '◇' },
-  { key: 'report', label: 'Report', icon: '◌' },
-  { key: 'help', label: 'Help', icon: '◇' },
+  { key: 'dashboard', label: '数据看板', icon: '⌂' },
+  { key: 'efficiency', label: '效率分析', icon: <EfficiencySidebarIcon /> },
+  { key: 'recipeDj', label: '配方-电机泵', icon: <DownloadSidebarIcon /> },
+  { key: 'recipeQyj', label: '配方-汽油机', icon: <DownloadSidebarIcon /> },
+  { key: 'report', label: '报表服务', icon: <ReportSidebarIcon /> },
+  { key: 'help', label: '帮助', icon: '？' },
 ]
 
 const protectedSidebarItems: SidebarItem[] = [
-  { key: 'runtime', label: '标签', icon: '▲' },
-  { key: 'tags', label: '订阅', icon: '▣' },
+  { key: 'runtime', label: '标签', icon: '⌗' },
+  { key: 'tags', label: '订阅', icon: '◎' },
 ]
 
 const dashboardFaceplateIndexes = [1, 2] as const
@@ -565,6 +620,7 @@ function App() {
   const [statusMessage, setStatusMessage] = useState('系统已就绪')
   const [groupFilter, setGroupFilter] = useState('all')
   const [selectedTagGroupFilter, setSelectedTagGroupFilter] = useState('all')
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
@@ -662,11 +718,11 @@ function App() {
         setEfficiencyLoading(true)
       }
 
-      const response = await getSimulatedEfficiencyTimeline(12)
+      const response = await getEfficiencyTimeline(12)
       setEfficiencyTimeline(response)
 
       if (!silent) {
-        setStatusMessage('效率分析仿真数据已刷新')
+        setStatusMessage('效率分析数据已刷新')
       }
 
     } catch (error) {
@@ -1040,8 +1096,10 @@ function App() {
     const factoryTotal = (passNumber.numeric ?? 0) + (failNumber.numeric ?? 0)
     const passPercent = factoryTotal > 0 ? Math.round(((passNumber.numeric ?? 0) / factoryTotal) * 100) : 0
     const failPercent = factoryTotal > 0 ? Math.round(((failNumber.numeric ?? 0) / factoryTotal) * 100) : 0
-    const status = errCodeToStatus(Math.round(errCode.numeric ?? 0))
-    const workflowValue = Math.round(workFlow.numeric ?? 0)
+    const errCodeRaw = toNumericValue(errCode.snapshot?.value ?? null)
+    const workflowRaw = toNumericValue(workFlow.snapshot?.value ?? null)
+    const status = errCodeToStatus(Math.round(errCodeRaw ?? 0))
+    const workflowValue = Math.round(workflowRaw ?? 0)
     const workflowText = workflowToLabel(workflowValue)
     const workflowClass = workflowValue === 0 ? 'standby' : 'running'
     const enduranceMode = dashboardField(faceplateIndex, 'automode0_factory1_endurance', /automode0[_]?factory1[_]?endurance/)
@@ -1060,12 +1118,13 @@ function App() {
       status.includes('reconnect') || status.includes('disconnect') || status.includes('offline') || status.includes('fault') || status.includes('error'),
     )
     const connected = hasConnectedDevice && !hasDeviceDisconnecting && hasGoodSnapshot
+    const hasStateValue = errCodeRaw !== null || workflowRaw !== null
     const boardHeadClass =
-      !connected
+      !hasStateValue
         ? 'disconnected'
-        : (errCode.numeric ?? 0) > 0
+        : (errCodeRaw ?? 0) > 0
           ? 'fault'
-          : (workFlow.numeric ?? 0) > 0
+          : (workflowRaw ?? 0) > 0
             ? 'connected'
             : 'standby'
     const noDataText = '-'
@@ -1120,6 +1179,21 @@ function App() {
     }
   })
   }, [dashboardFaceplateIndexes, dashboardTagsByFaceplate, dashboardTrendByFaceplate, runtimeDeviceStatusById, snapshotByTagId])
+
+  const liveEfficiencyStateByFaceplate = useMemo(() => {
+    return dashboardDataList.reduce<Partial<Record<number, { stateKey: 'disconnected' | 'standby' | 'running' | 'fault'; stateLabel: string; colorHex: string }>>>((acc, item) => {
+      if (item.boardHeadClass === 'fault') {
+        acc[item.faceplateIndex] = { stateKey: 'fault', stateLabel: '报警', colorHex: '#ca3333' }
+      } else if (item.boardHeadClass === 'connected') {
+        acc[item.faceplateIndex] = { stateKey: 'running', stateLabel: '测试中', colorHex: '#2eaa4a' }
+      } else if (item.boardHeadClass === 'standby') {
+        acc[item.faceplateIndex] = { stateKey: 'standby', stateLabel: '待机', colorHex: '#eace21' }
+      } else {
+        acc[item.faceplateIndex] = { stateKey: 'disconnected', stateLabel: '未工作', colorHex: '#dadce0' }
+      }
+      return acc
+    }, {})
+  }, [dashboardDataList])
 
   const dashboardSyncTargets = useMemo(() => {
     const recipe1 = dashboardDataList.find((item) => item.faceplateIndex === 1)
@@ -1550,26 +1624,48 @@ function App() {
     setStatusMessage('请先登录')
   }
 
+  function handleSidebarCollapseToggle() {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev
+      if (next) setView('dashboard')
+      return next
+    })
+  }
+
   function renderSidebarButtons(mode: 'default' | 'runtime') {
     const isRuntime = mode === 'runtime'
     const hasRuntimeEntry = sidebarItems.some((item) => item.key === 'runtime')
+    const isNavigationLocked = isSidebarCollapsed
 
     const rendered = sidebarItems.flatMap((item) => {
       const itemClass = isRuntime ? (view === item.key ? 'runtime-nav active' : 'runtime-nav') : (view === item.key ? 'nav-item active' : 'nav-item')
       const iconClass = isRuntime ? 'runtime-nav-icon' : 'nav-icon'
       const labelClass = isRuntime ? 'runtime-nav-label' : 'nav-label'
+      const itemTitle = isSidebarCollapsed ? item.label : undefined
 
       if (item.key === 'runtime') {
         return [
           <div key={`sidebar-auth-before-${mode}`}>
             <div className="sidebar-divider" aria-hidden="true" />
             <div className="sidebar-auth-inline">
-              <button type="button" className="sidebar-auth-entry" onClick={handleAuthEntryClick}>
-                <span className="sidebar-auth-icon">↪</span>
-                <span className="sidebar-auth-label">{isAuthenticated ? 'Logout' : 'Login'}</span>
+              <button
+                type="button"
+                className="sidebar-auth-entry"
+                onClick={() => { if (!isNavigationLocked) handleAuthEntryClick() }}
+                disabled={isNavigationLocked}
+                title={isSidebarCollapsed ? (isAuthenticated ? '退出' : '登录') : undefined}
+              >
+                <span className="sidebar-auth-icon">{isAuthenticated ? '↪' : <UserLoginSidebarIcon />}</span>
+                <span className="sidebar-auth-label">{isAuthenticated ? '退出' : '登录'}</span>
               </button>
             </div>
-            <button type="button" className={itemClass} onClick={() => handleSidebarClick(item.key)}>
+            <button
+              type="button"
+              className={itemClass}
+              onClick={() => { if (!isNavigationLocked) handleSidebarClick(item.key) }}
+              disabled={isNavigationLocked}
+              title={itemTitle}
+            >
               <span className={iconClass}>{item.icon}</span>
               <span className={labelClass}>{item.label}</span>
             </button>
@@ -1578,7 +1674,14 @@ function App() {
       }
 
       return [
-        <button key={item.key} type="button" className={itemClass} onClick={() => handleSidebarClick(item.key)}>
+        <button
+          key={item.key}
+          type="button"
+          className={itemClass}
+          onClick={() => { if (!isNavigationLocked) handleSidebarClick(item.key) }}
+          disabled={isNavigationLocked}
+          title={itemTitle}
+        >
           <span className={iconClass}>{item.icon}</span>
           <span className={labelClass}>{item.label}</span>
         </button>,
@@ -1588,9 +1691,15 @@ function App() {
     if (!hasRuntimeEntry) {
       rendered.push(
         <div key={`sidebar-auth-tail-${mode}`} className="sidebar-auth-inline">
-          <button type="button" className="sidebar-auth-entry" onClick={handleAuthEntryClick}>
-            <span className="sidebar-auth-icon">↪</span>
-            <span className="sidebar-auth-label">Login</span>
+          <button
+            type="button"
+            className="sidebar-auth-entry"
+            onClick={() => { if (!isNavigationLocked) handleAuthEntryClick() }}
+            disabled={isNavigationLocked}
+            title={isSidebarCollapsed ? '登录' : undefined}
+          >
+            <span className="sidebar-auth-icon"><UserLoginSidebarIcon /></span>
+            <span className="sidebar-auth-label">登录</span>
           </button>
         </div>,
       )
@@ -1600,10 +1709,23 @@ function App() {
   }
 
   const runtimePage = (
-    <section className="runtime-shell">
-      <aside className="runtime-sidebar">
+    <section className={`runtime-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
+      <aside className={`runtime-sidebar${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
         <div className="runtime-brand">
-          <div className="runtime-brand-mark">清洗机测试系统</div>
+          <div className="runtime-brand-mark">
+            <span className="brand-logo-text">清洗机测试系统</span>
+          </div>
+        </div>
+        <div className="sidebar-collapse-row">
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            onClick={handleSidebarCollapseToggle}
+            aria-label={isSidebarCollapsed ? '展开侧边栏' : '收缩侧边栏'}
+            title={isSidebarCollapsed ? '展开' : '收缩'}
+          >
+            <span className="sidebar-collapse-icon"><SidebarCollapseIcon collapsed={isSidebarCollapsed} /></span>
+          </button>
         </div>
         <nav className="runtime-sidebar-nav" aria-label="主导航">
           {renderSidebarButtons('runtime')}
@@ -1925,6 +2047,7 @@ function App() {
       <EfficiencyAnalysis
         data={efficiencyTimeline}
         loading={efficiencyLoading}
+        liveStateByFaceplate={liveEfficiencyStateByFaceplate}
       />
       <div className="toast-line">{statusMessage}</div>
     </>
@@ -2235,6 +2358,13 @@ function App() {
     </section>
   )
 
+  const [isInIframe, setIsInIframe] = useState(false)
+
+  useEffect(() => {
+    // 检测是否在 iframe 中（IDE 预览环境）
+    setIsInIframe(window.self !== window.top)
+  }, [])
+
   const helpPage = (
     <section className="page-shell">
 
@@ -2246,9 +2376,22 @@ function App() {
       </header>
 
       <section className="content-strip help-layout">
-        <div className="help-pdf-shell">
-          <iframe className="help-pdf-frame" src="/help/manual#zoom=100" title="系统操作手册 PDF" />
-        </div>
+        {isInIframe ? (
+          <div className="help-iframe-notice">
+            <div className="help-notice-content">
+              <h3>📄 PDF 文档</h3>
+              <p>由于 IDE 内置预览限制，PDF 无法正常显示。</p>
+              <p>请在外部浏览器中打开本页面查看帮助文档。</p>
+              <a href="/help/manual" target="_blank" rel="noopener noreferrer" className="primary-action">
+                在新窗口打开 PDF
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div className="help-pdf-shell">
+            <iframe className="help-pdf-frame" src="/help/manual#zoom=100" title="系统操作手册 PDF" />
+          </div>
+        )}
       </section>
 
       <div className="toast-line">{statusMessage}</div>
@@ -2297,9 +2440,22 @@ function App() {
   )
 
   const sidebarShell = (
-    <aside className="sidebar">
+    <aside className={`sidebar${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <div className="brand">
-        <div className="brand-mark">清洗机测试系统</div>
+        <div className="brand-mark">
+          <span className="brand-logo-text">清洗机测试系统</span>
+        </div>
+      </div>
+      <div className="sidebar-collapse-row">
+        <button
+          type="button"
+          className="sidebar-collapse-btn"
+          onClick={handleSidebarCollapseToggle}
+          aria-label={isSidebarCollapsed ? '展开侧边栏' : '收缩侧边栏'}
+          title={isSidebarCollapsed ? '展开' : '收缩'}
+        >
+          <span className="sidebar-collapse-icon"><SidebarCollapseIcon collapsed={isSidebarCollapsed} /></span>
+        </button>
       </div>
       <nav className="sidebar-nav" aria-label="主导航">
         {renderSidebarButtons('default')}
@@ -2308,13 +2464,13 @@ function App() {
     </aside>
   )
 
-  if (view === 'dashboard') return <div className="app-shell">{sidebarShell}<main className="workspace">{dashboardPage}</main></div>
-  if (view === 'efficiency') return <div className="app-shell">{sidebarShell}<main className="workspace">{efficiencyPage}</main></div>
-  if (view === 'runtime') return isAuthenticated ? runtimePage : <div className="app-shell">{sidebarShell}<main className="workspace">{loginPage}</main></div>
+  if (view === 'dashboard') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{dashboardPage}</main></div>
+  if (view === 'efficiency') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{efficiencyPage}</main></div>
+  if (view === 'runtime') return isAuthenticated ? runtimePage : <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{loginPage}</main></div>
 
-  if (view === 'tags') return <div className="app-shell">{sidebarShell}<main className="workspace">{isAuthenticated ? tagsPage : loginPage}</main></div>
-  if (view === 'recipeDj' || view === 'recipeQyj') return <div className="app-shell">{sidebarShell}<main className="workspace">{recipePage}</main></div>
-  return <div className="app-shell">{sidebarShell}<main className="workspace">{view === 'help' ? helpPage : loginPage}</main></div>
+  if (view === 'tags') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? tagsPage : loginPage}</main></div>
+  if (view === 'recipeDj' || view === 'recipeQyj') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{recipePage}</main></div>
+  return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{view === 'help' ? helpPage : loginPage}</main></div>
 }
 
 

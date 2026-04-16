@@ -39,7 +39,6 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
             await using var scope = _scopeFactory.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ScadaDbContext>();
             var now = DateTimeOffset.UtcNow;
-            await EnsureDemoHistoryAsync(dbContext, now.AddHours(-24), now, cancellationToken);
             await CaptureLiveStateInternalAsync(dbContext, now, cancellationToken);
             await CleanupOldSegmentsAsync(dbContext, now, cancellationToken);
             if (dbContext.ChangeTracker.HasChanges())
@@ -64,7 +63,6 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
             var windowEnd = DateTimeOffset.UtcNow;
             var windowStart = windowEnd.AddHours(-clampedHours);
 
-            await EnsureDemoHistoryAsync(dbContext, windowStart, windowEnd, cancellationToken);
             await CaptureLiveStateInternalAsync(dbContext, windowEnd, cancellationToken);
             await CleanupOldSegmentsAsync(dbContext, windowEnd, cancellationToken);
             if (dbContext.ChangeTracker.HasChanges())
@@ -74,10 +72,14 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
 
             var segments = await dbContext.EfficiencyTimelineSegments
                 .AsNoTracking()
-                .Where(item => FaceplateIndexes.Contains(item.FaceplateIndex) && item.EndedAt >= windowStart && item.StartedAt <= windowEnd)
+                .Where(item => FaceplateIndexes.Contains(item.FaceplateIndex))
+                .ToListAsync(cancellationToken);
+
+            segments = segments
+                .Where(item => !item.IsDemo && item.EndedAt >= windowStart && item.StartedAt <= windowEnd)
                 .OrderBy(item => item.FaceplateIndex)
                 .ThenBy(item => item.StartedAt)
-                .ToListAsync(cancellationToken);
+                .ToList();
 
             var lanes = FaceplateIndexes.Select(faceplateIndex =>
             {
@@ -141,10 +143,12 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
     {
         foreach (var faceplateIndex in FaceplateIndexes)
         {
-            var earliestSegment = await dbContext.EfficiencyTimelineSegments
-                .Where(item => item.FaceplateIndex == faceplateIndex && item.EndedAt >= windowStart)
+            var earliestSegment = (await dbContext.EfficiencyTimelineSegments
+                .Where(item => item.FaceplateIndex == faceplateIndex)
+                .ToListAsync(cancellationToken))
+                .Where(item => item.EndedAt >= windowStart)
                 .OrderBy(item => item.StartedAt)
-                .FirstOrDefaultAsync(cancellationToken);
+                .FirstOrDefault();
 
             var seedEnd = earliestSegment is null ? windowEnd : earliestSegment.StartedAt;
             if (seedEnd <= windowStart)
@@ -169,11 +173,12 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var latestSegment = await dbContext.EfficiencyTimelineSegments
+        var latestSegment = (await dbContext.EfficiencyTimelineSegments
             .Where(item => item.FaceplateIndex == state.FaceplateIndex)
+            .ToListAsync(cancellationToken))
             .OrderByDescending(item => item.EndedAt)
             .ThenByDescending(item => item.StartedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+            .FirstOrDefault();
 
         if (latestSegment is null)
         {
@@ -182,7 +187,7 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
                 FaceplateIndex = state.FaceplateIndex,
                 StationName = state.StationName,
                 State = state.State,
-                StartedAt = now,
+                StartedAt = now.AddSeconds(-1),
                 EndedAt = now,
                 UpdatedAt = now,
                 IsDemo = false,
@@ -222,9 +227,10 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
     private async Task CleanupOldSegmentsAsync(ScadaDbContext dbContext, DateTimeOffset now, CancellationToken cancellationToken)
     {
         var cutoff = now - DataRetention;
-        var expiredSegments = await dbContext.EfficiencyTimelineSegments
+        var expiredSegments = (await dbContext.EfficiencyTimelineSegments
+            .ToListAsync(cancellationToken))
             .Where(item => item.EndedAt < cutoff)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         if (expiredSegments.Count > 0)
         {
@@ -312,6 +318,8 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
 
             if (faceplateTags.Length == 0)
             {
+                // Keep timeline aligned with dashboard fallback: no matching tags => disconnected.
+                yield return new FaceplateBoardState(faceplateIndex, $"宸ヤ綅{faceplateIndex}", EfficiencyStateKind.Disconnected);
                 continue;
             }
 
