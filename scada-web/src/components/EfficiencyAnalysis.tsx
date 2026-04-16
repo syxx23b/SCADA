@@ -111,19 +111,6 @@ export function EfficiencyAnalysis({
 
   return (
     <section className="efficiency-page">
-      <div className="efficiency-legend" aria-label="甘特图状态颜色说明">
-        <div className="efficiency-legend-swatches">
-          {LEGEND_ITEMS.map((item) => (
-            <span key={item.key} className="efficiency-legend-swatch" style={{ backgroundColor: item.color }} aria-hidden="true" />
-          ))}
-        </div>
-        <div className="efficiency-legend-labels">
-          {LEGEND_ITEMS.map((item) => (
-            <span key={item.key} className="efficiency-legend-label">{item.label}</span>
-          ))}
-        </div>
-      </div>
-
       {!data ? (
         <div className="efficiency-empty">{loading ? '效率分析加载中…' : '暂无效率分析数据'}</div>
       ) : (
