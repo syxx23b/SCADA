@@ -1753,16 +1753,6 @@ body,
   min-height: 36px;
 }
 
-.efficiency-track-row::before {
-  content: attr(data-label);
-  width: 56px;
-  font-size: 0.75rem;
-  color: var(--eff-muted);
-  font-weight: 500;
-  text-align: right;
-  flex-shrink: 0;
-}
-
 .efficiency-track {
   position: relative;
   flex: 1;
