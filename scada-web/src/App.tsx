@@ -662,7 +662,7 @@ function App() {
         setEfficiencyLoading(true)
       }
 
-      const response = await getSimulatedEfficiencyTimeline(24)
+      const response = await getSimulatedEfficiencyTimeline(12)
       setEfficiencyTimeline(response)
 
       if (!silent) {
@@ -1320,7 +1320,7 @@ function App() {
     void loadEfficiencyTimeline()
     const timer = window.setInterval(() => {
       void loadEfficiencyTimeline({ silent: true })
-    }, 5000)
+    }, 10000)
 
     return () => window.clearInterval(timer)
   }, [loadEfficiencyTimeline, view])

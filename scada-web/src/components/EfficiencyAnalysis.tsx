@@ -3,7 +3,7 @@ import type { EfficiencyTimelineLane, EfficiencyTimelineResponse } from '../type
 const LEGEND_ITEMS: Array<{ key: Exclude<EfficiencyTimelineLane['currentStateKey'], 'disconnected'>; label: string; color: string; description: string }> = [
   { key: 'standby', label: '待机', color: '#fbbc04', description: '黄色' },
   { key: 'running', label: '测试中', color: '#34a853', description: '绿色' },
-  { key: 'fault', label: '报警处理', color: '#ea4335', description: '红色' },
+  { key: 'fault', label: '报警', color: '#ea4335', description: '红色' },
 ]
 
 function formatDateTime(value: string) {
@@ -20,11 +20,9 @@ function formatDateTime(value: string) {
 function formatHourMinute(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '--:--'
-  return new Intl.DateTimeFormat('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(date)
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mm = String(date.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
 }
 
 function buildTicks(windowStart: string, windowEnd: string) {
@@ -32,13 +30,26 @@ function buildTicks(windowStart: string, windowEnd: string) {
   const end = new Date(windowEnd).getTime()
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return []
 
-  return Array.from({ length: 13 }, (_, index) => {
-    const ts = start + ((end - start) * index) / 12
-    return {
-      label: formatHourMinute(new Date(ts).toISOString()),
-      left: `${(index / 12) * 100}%`,
-    }
-  })
+  const ticks: { label: string; left: string }[] = []
+
+  // 找到第一个整点小时
+  const firstHour = new Date(start)
+  firstHour.setMinutes(0, 0, 0)
+  if (firstHour.getTime() < start) {
+    firstHour.setHours(firstHour.getHours() + 1)
+  }
+
+  // 生成每小时整点刻度
+  let current = firstHour.getTime()
+  while (current <= end) {
+    const left = ((current - start) / (end - start)) * 100
+    const date = new Date(current)
+    const label = `${String(date.getHours()).padStart(2, '0')}:00`
+    ticks.push({ label, left: `${left}%` })
+    current += 60 * 60_000 // 加1小时
+  }
+
+  return ticks
 }
 
 function formatDurationText(durationMs: number) {
@@ -117,7 +128,6 @@ export function EfficiencyAnalysis({
         <div className="efficiency-grid">
           {data.lanes.map((lane) => {
             const summary = buildSummary(lane)
-            const hasDemoData = lane.segments.some((segment) => segment.isDemo)
             return (
               <article key={lane.faceplateIndex} className="efficiency-card">
                 <header className="efficiency-card-head">
@@ -172,8 +182,6 @@ export function EfficiencyAnalysis({
 
 
                 <div className="efficiency-card-foot">
-                  <span>{hasDemoData ? '当前为前端仿真变量，用于测试甘特图动态刷新效果。' : '当前时间轴来自实际变量采集。'}</span>
-
                   <span>更新时间：{formatDateTime(data.generatedAt)}</span>
                 </div>
               </article>
