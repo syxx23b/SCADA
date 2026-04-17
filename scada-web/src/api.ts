@@ -8,6 +8,7 @@ import type {
   RuntimeOverview,
   TagDefinition,
   TagFormState,
+  ProductionByGwResponse,
 } from './types'
 
 
@@ -119,6 +120,10 @@ export function getRuntimeOverview() {
 
 export function getEfficiencyTimeline(hours = 24) {
   return request<EfficiencyTimelineResponse>(`/api/efficiency/timeline?hours=${hours}`)
+}
+
+export function getProductionTodayByGw() {
+  return request<ProductionByGwResponse>('/api/production/today-gw')
 }
 
 // ==================== 真实SCADA仿真系统 ====================

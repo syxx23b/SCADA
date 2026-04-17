@@ -121,3 +121,27 @@ export interface DeviceStatusChanged {
   message: string
   occurredAt: string
 }
+
+export interface ProductionByGwBucket {
+  gw: number
+  count: number
+}
+
+export interface ProductionByDateBucket {
+  date: string
+  count: number
+}
+
+export interface ProductionByMonthBucket {
+  month: string
+  count: number
+}
+
+export interface ProductionByGwResponse {
+  date: string
+  totalCount: number
+  buckets: ProductionByGwBucket[]
+  dailyLast30Years: ProductionByDateBucket[]
+  monthlyLast12Months: ProductionByMonthBucket[]
+  generatedAt: string
+}

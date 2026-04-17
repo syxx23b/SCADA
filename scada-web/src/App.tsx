@@ -3,18 +3,19 @@
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import type { FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
 
 import { isOpcUaTagStatusOk } from './tagStatus'
-import type { BrowseNode, DeviceConnection, EfficiencyTimelineResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
+import type { BrowseNode, DeviceConnection, EfficiencyTimelineResponse, ProductionByGwResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
 import { EfficiencyAnalysis } from './components/EfficiencyAnalysis'
+import { ProductionStatistics } from './components/ProductionStatistics'
 import { RecipeDJ } from './components/RecipeDJ'
 import { RecipeQYJ } from './components/RecipeQYJ'
 
 
 
 
-type ViewKey = 'dashboard' | 'efficiency' | 'runtime' | 'tags' | 'recipeDj' | 'recipeQyj' | 'help' | 'login'
+type ViewKey = 'dashboard' | 'efficiency' | 'production' | 'runtime' | 'tags' | 'recipeDj' | 'recipeQyj' | 'help' | 'login'
 type SidebarKey = ViewKey | 'report'
 
 type RecipeTypeKey = 'DJRecipe' | 'QYJRecipe'
@@ -35,6 +36,17 @@ function EfficiencySidebarIcon() {
       <circle cx="7.2" cy="7.3" r="0.8" fill="currentColor" />
       <circle cx="9.2" cy="9.3" r="0.8" fill="currentColor" />
       <circle cx="12" cy="5.8" r="0.8" fill="currentColor" />
+    </svg>
+  )
+}
+
+function ProductionSidebarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2.5 13.5H13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <rect x="3.2" y="8.4" width="2.2" height="4.2" rx="0.7" fill="currentColor" />
+      <rect x="6.9" y="6.4" width="2.2" height="6.2" rx="0.7" fill="currentColor" />
+      <rect x="10.6" y="4.2" width="2.2" height="8.4" rx="0.7" fill="currentColor" />
     </svg>
   )
 }
@@ -85,6 +97,7 @@ function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
 const baseSidebarItems: SidebarItem[] = [
   { key: 'dashboard', label: '数据看板', icon: '⌂' },
   { key: 'efficiency', label: '效率分析', icon: <EfficiencySidebarIcon /> },
+  { key: 'production', label: '产量统计', icon: <ProductionSidebarIcon /> },
   { key: 'recipeDj', label: '配方-电机泵', icon: <DownloadSidebarIcon /> },
   { key: 'recipeQyj', label: '配方-汽油机', icon: <DownloadSidebarIcon /> },
   { key: 'report', label: '报表服务', icon: <ReportSidebarIcon /> },
@@ -101,7 +114,7 @@ const dashboardFaceplateIndexes = [1, 2] as const
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'batch') return 'tags'
-  return value === 'dashboard' || value === 'efficiency' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'help' || value === 'login' ? value : 'dashboard'
+  return value === 'dashboard' || value === 'efficiency' || value === 'production' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'help' || value === 'login' ? value : 'dashboard'
 }
 
 
@@ -671,6 +684,8 @@ function App() {
   const [qyjLoadedRecipeName, setQyjLoadedRecipeName] = useState<string>('')
   const [efficiencyTimeline, setEfficiencyTimeline] = useState<EfficiencyTimelineResponse | null>(null)
   const [efficiencyLoading, setEfficiencyLoading] = useState(false)
+  const [productionByGw, setProductionByGw] = useState<ProductionByGwResponse | null>(null)
+  const [productionLoading, setProductionLoading] = useState(false)
 
   const showStatus = (message: string) => {
 
@@ -735,6 +750,30 @@ function App() {
       }
 
       efficiencyRequestPendingRef.current = false
+    }
+  }, [])
+
+  const loadProductionByGw = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
+
+    try {
+      if (!silent) {
+        setProductionLoading(true)
+      }
+
+      const response = await getProductionTodayByGw()
+      setProductionByGw(response)
+      if (!silent) {
+        setStatusMessage('产量统计数据已刷新')
+      }
+    } catch (error) {
+      if (!silent) {
+        setStatusMessage(error instanceof Error ? error.message : '产量统计刷新失败')
+      }
+    } finally {
+      if (!silent) {
+        setProductionLoading(false)
+      }
     }
   }, [])
 
@@ -1400,6 +1439,17 @@ function App() {
   }, [loadEfficiencyTimeline, view])
 
   useEffect(() => {
+    if (view !== 'production') return
+
+    void loadProductionByGw()
+    const timer = window.setInterval(() => {
+      void loadProductionByGw({ silent: true })
+    }, 10000)
+
+    return () => window.clearInterval(timer)
+  }, [loadProductionByGw, view])
+
+  useEffect(() => {
     const connection = new HubConnectionBuilder().withUrl('/hubs/realtime').withAutomaticReconnect().configureLogging(LogLevel.Information).build()
 
     connection.on('tagSnapshotUpdated', (snapshot: TagSnapshot) => {
@@ -2053,6 +2103,16 @@ function App() {
     </>
   )
 
+  const productionPage = (
+    <>
+      <ProductionStatistics
+        data={productionByGw}
+        loading={productionLoading}
+      />
+      <div className="toast-line">{statusMessage}</div>
+    </>
+  )
+
   function matchesBrowseNode(node: BrowseNode) {
 
     const keyword = browserSearch.trim().toLowerCase()
@@ -2466,6 +2526,7 @@ function App() {
 
   if (view === 'dashboard') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{dashboardPage}</main></div>
   if (view === 'efficiency') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{efficiencyPage}</main></div>
+  if (view === 'production') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{productionPage}</main></div>
   if (view === 'runtime') return isAuthenticated ? runtimePage : <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{loginPage}</main></div>
 
   if (view === 'tags') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? tagsPage : loginPage}</main></div>
