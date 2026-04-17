@@ -145,3 +145,20 @@ export interface ProductionByGwResponse {
   monthlyLast12Months: ProductionByMonthBucket[]
   generatedAt: string
 }
+
+export interface FaultByGwResponse {
+  date: string
+  totalFaultCount: number
+  totalQualifiedCount: number
+  faultBuckets: ProductionByGwBucket[]
+  qualifiedBuckets: ProductionByGwBucket[]
+  quarterErrorDetails: FaultQuarterBucket[]
+  quarterQualifiedDetails: ProductionByDateBucket[]
+  generatedAt: string
+}
+
+export interface FaultQuarterBucket {
+  date: string
+  err: number
+  count: number
+}

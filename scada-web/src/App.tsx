@@ -3,11 +3,12 @@
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import type { FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, getFaultTodayByGw, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
 
 import { isOpcUaTagStatusOk } from './tagStatus'
-import type { BrowseNode, DeviceConnection, EfficiencyTimelineResponse, ProductionByGwResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
+import type { BrowseNode, DeviceConnection, EfficiencyTimelineResponse, FaultByGwResponse, ProductionByGwResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
 import { EfficiencyAnalysis } from './components/EfficiencyAnalysis'
+import { FaultAnalysis } from './components/FaultAnalysis'
 import { ProductionStatistics } from './components/ProductionStatistics'
 import { RecipeDJ } from './components/RecipeDJ'
 import { RecipeQYJ } from './components/RecipeQYJ'
@@ -15,8 +16,8 @@ import { RecipeQYJ } from './components/RecipeQYJ'
 
 
 
-type ViewKey = 'dashboard' | 'efficiency' | 'production' | 'runtime' | 'tags' | 'recipeDj' | 'recipeQyj' | 'help' | 'login'
-type SidebarKey = ViewKey | 'report'
+type ViewKey = 'dashboard' | 'efficiency' | 'fault' | 'production' | 'runtime' | 'tags' | 'recipeDj' | 'recipeQyj' | 'help' | 'login'
+type SidebarKey = ViewKey
 
 type RecipeTypeKey = 'DJRecipe' | 'QYJRecipe'
 type RuntimeStatus = { label: '正常' | '异常'; className: 'normal' | 'fault' }
@@ -51,13 +52,12 @@ function ProductionSidebarIcon() {
   )
 }
 
-function ReportSidebarIcon() {
+function FaultSidebarIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="1.5" y="1.5" width="11" height="13" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M4.5 6H9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M4.5 9H9.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-      <path d="M10.8 11.6L14.2 8.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M8 1.8L14 13.2H2L8 1.8Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M8 5.6V9.2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <circle cx="8" cy="11.5" r="0.9" fill="currentColor" />
     </svg>
   )
 }
@@ -97,10 +97,10 @@ function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
 const baseSidebarItems: SidebarItem[] = [
   { key: 'dashboard', label: '数据看板', icon: '⌂' },
   { key: 'efficiency', label: '效率分析', icon: <EfficiencySidebarIcon /> },
+  { key: 'fault', label: '故障分析', icon: <FaultSidebarIcon /> },
   { key: 'production', label: '产量统计', icon: <ProductionSidebarIcon /> },
   { key: 'recipeDj', label: '配方-电机泵', icon: <DownloadSidebarIcon /> },
   { key: 'recipeQyj', label: '配方-汽油机', icon: <DownloadSidebarIcon /> },
-  { key: 'report', label: '报表服务', icon: <ReportSidebarIcon /> },
   { key: 'help', label: '帮助', icon: '？' },
 ]
 
@@ -109,12 +109,14 @@ const protectedSidebarItems: SidebarItem[] = [
   { key: 'tags', label: '订阅', icon: '◎' },
 ]
 
+const reportServiceKeys = new Set<SidebarKey>(['efficiency', 'fault', 'production'])
+
 const dashboardFaceplateIndexes = [1, 2] as const
 
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'batch') return 'tags'
-  return value === 'dashboard' || value === 'efficiency' || value === 'production' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'help' || value === 'login' ? value : 'dashboard'
+  return value === 'dashboard' || value === 'efficiency' || value === 'fault' || value === 'production' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'help' || value === 'login' ? value : 'dashboard'
 }
 
 
@@ -684,6 +686,8 @@ function App() {
   const [qyjLoadedRecipeName, setQyjLoadedRecipeName] = useState<string>('')
   const [efficiencyTimeline, setEfficiencyTimeline] = useState<EfficiencyTimelineResponse | null>(null)
   const [efficiencyLoading, setEfficiencyLoading] = useState(false)
+  const [faultByGw, setFaultByGw] = useState<FaultByGwResponse | null>(null)
+  const [faultLoading, setFaultLoading] = useState(false)
   const [productionByGw, setProductionByGw] = useState<ProductionByGwResponse | null>(null)
   const [productionLoading, setProductionLoading] = useState(false)
 
@@ -773,6 +777,30 @@ function App() {
     } finally {
       if (!silent) {
         setProductionLoading(false)
+      }
+    }
+  }, [])
+
+  const loadFaultByGw = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
+
+    try {
+      if (!silent) {
+        setFaultLoading(true)
+      }
+
+      const response = await getFaultTodayByGw()
+      setFaultByGw(response)
+      if (!silent) {
+        setStatusMessage('故障分析数据已刷新')
+      }
+    } catch (error) {
+      if (!silent) {
+        setStatusMessage(error instanceof Error ? error.message : '故障分析刷新失败')
+      }
+    } finally {
+      if (!silent) {
+        setFaultLoading(false)
       }
     }
   }, [])
@@ -1450,6 +1478,17 @@ function App() {
   }, [loadProductionByGw, view])
 
   useEffect(() => {
+    if (view !== 'fault') return
+
+    void loadFaultByGw()
+    const timer = window.setInterval(() => {
+      void loadFaultByGw({ silent: true })
+    }, 10000)
+
+    return () => window.clearInterval(timer)
+  }, [loadFaultByGw, view])
+
+  useEffect(() => {
     const connection = new HubConnectionBuilder().withUrl('/hubs/realtime').withAutomaticReconnect().configureLogging(LogLevel.Information).build()
 
     connection.on('tagSnapshotUpdated', (snapshot: TagSnapshot) => {
@@ -1627,12 +1666,6 @@ function App() {
 
 
   function handleSidebarClick(key: SidebarKey) {
-    if (key === 'report') {
-      const popup = window.open('http://localhost:8080/webroot/decision', '_blank', 'noopener,noreferrer')
-      if (!popup) setStatusMessage('Report 页面被浏览器拦截，请允许弹窗后重试')
-      return
-    }
-
     if (!isAuthenticated && (key === 'runtime' || key === 'tags')) {
       setView('login')
       setStatusMessage('请先登录后再访问标签、订阅页面')
@@ -1692,6 +1725,8 @@ function App() {
       const iconClass = isRuntime ? 'runtime-nav-icon' : 'nav-icon'
       const labelClass = isRuntime ? 'runtime-nav-label' : 'nav-label'
       const itemTitle = isSidebarCollapsed ? item.label : undefined
+      const shouldRenderReportGroupTitle = item.key === 'efficiency' && !isSidebarCollapsed
+      const shouldRenderReportGroupTail = item.key === 'production' && !isSidebarCollapsed
 
       if (item.key === 'runtime') {
         return [
@@ -1723,7 +1758,16 @@ function App() {
         ]
       }
 
+      const prefix = shouldRenderReportGroupTitle
+        ? [
+            <div key={`report-group-divider-${mode}`} className="sidebar-divider" aria-hidden="true" />,
+            <div key={`report-group-title-${mode}`} className="sidebar-group-title">{reportServiceKeys.has(item.key) ? '报表服务' : ''}</div>,
+          ]
+        : []
+      const suffix = shouldRenderReportGroupTail ? [<div key={`report-group-tail-${mode}`} className="sidebar-divider" aria-hidden="true" />] : []
+
       return [
+        ...prefix,
         <button
           key={item.key}
           type="button"
@@ -1735,6 +1779,7 @@ function App() {
           <span className={iconClass}>{item.icon}</span>
           <span className={labelClass}>{item.label}</span>
         </button>,
+        ...suffix,
       ]
     })
 
@@ -2108,6 +2153,16 @@ function App() {
       <ProductionStatistics
         data={productionByGw}
         loading={productionLoading}
+      />
+      <div className="toast-line">{statusMessage}</div>
+    </>
+  )
+
+  const faultPage = (
+    <>
+      <FaultAnalysis
+        data={faultByGw}
+        loading={faultLoading}
       />
       <div className="toast-line">{statusMessage}</div>
     </>
@@ -2526,6 +2581,7 @@ function App() {
 
   if (view === 'dashboard') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{dashboardPage}</main></div>
   if (view === 'efficiency') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{efficiencyPage}</main></div>
+  if (view === 'fault') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{faultPage}</main></div>
   if (view === 'production') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{productionPage}</main></div>
   if (view === 'runtime') return isAuthenticated ? runtimePage : <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{loginPage}</main></div>
 

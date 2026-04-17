@@ -42,7 +42,8 @@ export function ProductionStatistics({
     const barRect = event.currentTarget.getBoundingClientRect()
     const rawLeft = barRect.left - containerRect.left + barRect.width / 2
     const clampedLeft = Math.min(Math.max(rawLeft, 90), Math.max(containerRect.width - 90, 90))
-    const top = Math.max(barRect.top - containerRect.top - 10, 14)
+    // Keep tooltip inside chart area to avoid clipping near the top edge.
+    const top = Math.max(barRect.top - containerRect.top - 10, 74)
     setDailyTooltip({
       left: clampedLeft,
       top,
@@ -110,6 +111,7 @@ export function ProductionStatistics({
                         onMouseEnter={(event) => updateDailyTooltip(event, item)}
                         onMouseMove={(event) => updateDailyTooltip(event, item)}
                       >
+                        <div className="production-daily-value">{item.count}</div>
                         <div className="production-daily-track">
                           <div className="production-daily-fill" style={{ height: `${height}%` }} />
                         </div>

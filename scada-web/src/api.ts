@@ -9,6 +9,7 @@ import type {
   TagDefinition,
   TagFormState,
   ProductionByGwResponse,
+  FaultByGwResponse,
 } from './types'
 
 
@@ -124,6 +125,10 @@ export function getEfficiencyTimeline(hours = 24) {
 
 export function getProductionTodayByGw() {
   return request<ProductionByGwResponse>('/api/production/today-gw')
+}
+
+export function getFaultTodayByGw() {
+  return request<FaultByGwResponse>('/api/production/fault-today-gw')
 }
 
 // ==================== 真实SCADA仿真系统 ====================

@@ -1264,6 +1264,17 @@
   justify-self: center;
 }
 
+.sidebar-group-title {
+  width: 192px;
+  padding: 6px 14px 2px;
+  font-size: 16px !important;
+  line-height: 24px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.88);
+  text-align: left;
+}
+
 .sidebar-divider + .nav-item,
 .sidebar-divider + .runtime-nav {
   margin-top: 2px;
@@ -1949,7 +1960,9 @@ body,
 .sidebar.sidebar-collapsed .nav-label,
 .runtime-sidebar.sidebar-collapsed .runtime-nav-label,
 .sidebar.sidebar-collapsed .sidebar-auth-label,
-.runtime-sidebar.sidebar-collapsed .sidebar-auth-label {
+.runtime-sidebar.sidebar-collapsed .sidebar-auth-label,
+.sidebar.sidebar-collapsed .sidebar-group-title,
+.runtime-sidebar.sidebar-collapsed .sidebar-group-title {
   display: none !important;
 }
 
@@ -2155,6 +2168,117 @@ body,
   background: linear-gradient(180deg, #60a5fa 0%, #1d4ed8 100%);
 }
 
+.fault-bar-fill-vertical {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  background: transparent;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.fault-bar-qualified {
+  width: 100%;
+  background: linear-gradient(180deg, #86efac 0%, #16a34a 100%);
+}
+
+.fault-bar-fault {
+  width: 100%;
+  background: linear-gradient(180deg, #fda4af 0%, #dc2626 100%);
+}
+
+.fault-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: -4px;
+}
+
+.fault-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: #475569;
+  font-weight: 600;
+}
+
+.fault-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.fault-legend-dot-qualified {
+  background: #16a34a;
+}
+
+.fault-legend-dot-fault {
+  background: #dc2626;
+}
+
+.fault-page .production-table-wrap {
+  max-height: none;
+  overflow: visible;
+}
+
+.fault-page .production-table {
+  table-layout: auto;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.fault-page .production-table th,
+.fault-page .production-table td {
+  text-align: center;
+  border-bottom: none;
+}
+
+.fault-page .production-table thead th {
+  background: #e9eef8;
+  color: #334155;
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.fault-page .production-table tbody tr:nth-child(odd) td {
+  background: #f8fbff;
+}
+
+.fault-page .production-table tbody tr:nth-child(even) td {
+  background: #eef4ff;
+}
+
+.fault-page .production-table tbody td {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+
+.fault-page .production-table tbody td.fault-pass-rate-high {
+  background: #22c55e !important;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.fault-page .production-table tbody td.fault-pass-rate-mid {
+  background: #f59e0b !important;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.fault-page .production-table tbody td.fault-pass-rate-low {
+  background: #ef4444 !important;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.fault-page .production-table tbody td.fault-err-peak {
+  background: #fb923c !important;
+  color: #ffffff;
+  font-weight: 700;
+}
+
 .production-count {
   font-size: 0.82rem;
   color: #1f2937;
@@ -2176,6 +2300,49 @@ body,
   font-size: 0.92rem;
   color: #1f2937;
   font-weight: 700;
+}
+
+.production-table-subtitle {
+  margin-top: -4px;
+  font-size: 0.78rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.production-table-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.production-table-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.production-export-btn {
+  min-width: 42px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1e293b;
+  font-size: 0.72rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.production-export-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #94a3b8;
+}
+
+.production-export-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .production-chart-area {
@@ -2208,10 +2375,10 @@ body,
 }
 
 .production-daily-value {
-  font-size: 0.66rem;
+  font-size: 0.74rem;
   line-height: 1;
   color: #334155;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .production-daily-track {
