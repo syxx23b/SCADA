@@ -62,14 +62,6 @@ export function FaultAnalysis({
 }) {
   const quarterExportRef = useRef<HTMLDivElement | null>(null)
 
-  const escapeHtml = (value: string) =>
-    value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;')
-
   const faultBuckets = data?.faultBuckets ?? []
   const qualifiedBuckets = data?.qualifiedBuckets ?? []
   const quarterErrorDetails = data?.quarterErrorDetails ?? []
@@ -103,7 +95,6 @@ export function FaultAnalysis({
     })
   const maxTotal = rows.reduce((max, item) => Math.max(max, item.total), 0)
 
-  const quarterHeaders = ['日期', ...quarterErrCodes.map((err) => errCodeToLabel(err)), '故障总数', '合格总数', '合格率']
   const quarterRows = quarterDates.map((date) => {
     const errCounts = quarterErrCodes.map((err) => quarterMatrix.get(`${date}|${err}`) ?? 0)
     const faultTotal = errCounts.reduce((sum, count) => sum + count, 0)
@@ -131,52 +122,6 @@ export function FaultAnalysis({
       passRateClass,
     }
   })
-
-  const exportQuarterAsExcel = () => {
-    if (quarterRows.length === 0) return
-    const colWidth = quarterHeaders.map((_, index) => {
-      if (index === 0) return '<col style="width: 120px;" />'
-      if (index === quarterHeaders.length - 1) return '<col style="width: 96px;" />'
-      return '<col style="width: 88px;" />'
-    }).join('')
-    const tableHeaderHtml = quarterHeaders.map((header) => `<th>${escapeHtml(header)}</th>`).join('')
-    const tableBodyHtml = quarterRows
-      .map((row) => {
-        const errHtml = row.errCounts.map((value) => `<td>${value}</td>`).join('')
-        return `<tr><td>${escapeHtml(row.date)}</td>${errHtml}<td>${row.faultTotal}</td><td>${row.qualifiedTotal}</td><td>${escapeHtml(row.passRate)}</td></tr>`
-      })
-      .join('')
-
-    const excelHtml = `
-      <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
-      <head>
-        <meta charset="UTF-8" />
-        <!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>故障统计</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
-        <style>
-          table { border-collapse: collapse; font-family: "Microsoft YaHei", Arial, sans-serif; font-size: 11pt; }
-          th, td { border: 1px solid #bfc6d4; text-align: center; padding: 6px 8px; white-space: nowrap; }
-          th { background: #e9eef8; font-weight: 700; }
-        </style>
-      </head>
-      <body>
-        <table>
-          <colgroup>${colWidth}</colgroup>
-          <thead><tr>${tableHeaderHtml}</tr></thead>
-          <tbody>${tableBodyHtml}</tbody>
-        </table>
-      </body>
-      </html>
-    `
-    const blob = new Blob([`\uFEFF${excelHtml}`], { type: 'application/vnd.ms-excel;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `过去1个季度故障统计_${new Date().toISOString().slice(0, 10)}.xls`
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    URL.revokeObjectURL(url)
-  }
 
   const exportQuarterAsPdf = async () => {
     if (quarterRows.length === 0) return
@@ -273,13 +218,10 @@ export function FaultAnalysis({
 
           <article className="production-table-card">
             <div className="production-table-head">
-              <div>
-                <div className="production-table-title">过去1个季度故障统计</div>
-                <div className="production-table-subtitle">
-                  故障统计仅供参考,数值为测试过程中采集到的报警数目,不等于故障产品数量
-                </div>
-              </div>
               <div className="production-table-actions">
+                <div className="production-table-heading">
+                  <div className="production-table-title">过去1个季度故障统计</div>
+                </div>
                 <button
                   type="button"
                   className="production-export-btn"
@@ -290,16 +232,9 @@ export function FaultAnalysis({
                 >
                   PDF
                 </button>
-                <button
-                  type="button"
-                  className="production-export-btn"
-                  onClick={exportQuarterAsExcel}
-                  disabled={quarterRows.length === 0}
-                  title="导出Excel"
-                  aria-label="导出Excel"
-                >
-                  XLS
-                </button>
+              </div>
+              <div className="production-table-subtitle">
+                故障统计仅供参考,数值为测试过程中采集到的报警数目,不等于故障产品数量
               </div>
             </div>
             <div className="production-table-wrap" ref={quarterExportRef}>
@@ -327,11 +262,11 @@ export function FaultAnalysis({
                             key={`err-cell-${row.date}-${err}`}
                             className={row.errCounts[index] === row.maxErrCount && row.maxErrCount > 0 ? 'fault-err-peak' : ''}
                           >
-                            {row.errCounts[index]}
+                            {row.errCounts[index] === 0 ? "" : row.errCounts[index]}
                           </td>
                         ))}
-                        <td>{row.faultTotal}</td>
-                        <td>{row.qualifiedTotal}</td>
+                        <td>{row.faultTotal === 0 ? "" : row.faultTotal}</td>
+                        <td>{row.qualifiedTotal === 0 ? "" : row.qualifiedTotal}</td>
                         <td className={row.passRateClass}>{row.passRate}</td>
                       </tr>
                     ))}

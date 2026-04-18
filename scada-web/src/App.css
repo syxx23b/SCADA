@@ -1270,9 +1270,14 @@
   font-size: 16px !important;
   line-height: 24px;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: rgba(255, 255, 255, 0.88);
   text-align: left;
+}
+
+.sidebar-group-title + .nav-item,
+.sidebar-group-title + .runtime-nav {
+  margin-top: 2px;
 }
 
 .sidebar-divider + .nav-item,
@@ -1475,7 +1480,7 @@ body,
   padding: 24px;
   background: var(--eff-bg);
   color: var(--eff-text);
-  font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: "HarmonyOS Sans SC", "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 .efficiency-toolbar,
@@ -2296,6 +2301,26 @@ body,
   min-height: 0;
 }
 
+.production-table-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.production-table-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.production-table-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 .production-table-title {
   font-size: 0.92rem;
   color: #1f2937;
@@ -2303,24 +2328,87 @@ body,
 }
 
 .production-table-subtitle {
-  margin-top: -4px;
   font-size: 0.78rem;
   color: #64748b;
   line-height: 1.4;
 }
 
-.production-table-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
+.config-card {
+  background: #fff;
+  border: 1px solid #d8e0f0;
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.12);
 }
 
-.production-table-actions {
+.config-card-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.config-card-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.config-card-subtitle {
+  font-size: 0.82rem;
+  color: #64748b;
+}
+
+.report-config-list {
+  display: grid;
+  gap: 10px;
+}
+
+.report-config-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8fbff;
+  border: 1px solid #e2e8f0;
 }
+
+.report-config-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.report-config-info strong {
+  font-size: 0.95rem;
+  color: #1f2937;
+}
+
+.report-config-info span {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.report-config-toggle {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.report-config-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+}
+
+
 
 .production-export-btn {
   min-width: 42px;
@@ -2654,6 +2742,7 @@ body,
 .login-card {
   box-shadow: 0 14px 34px rgba(15, 23, 42, 0.22) !important;
 }
+
 
 
 

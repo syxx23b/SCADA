@@ -23,6 +23,17 @@ export default defineConfig({
         target: 'http://localhost:5000',
         ws: true,
       },
+      '/webroot': {
+        target: 'http://localhost:8080',
+        changeOrigin: true,
+        ws: true,
+      },
+      '/fr': {
+        target: 'http://127.0.0.1:8075',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (path) => path.replace(/^\/fr/, ''),
+      },
       '/hubs': {
         target: 'http://localhost:5000',
         ws: true,

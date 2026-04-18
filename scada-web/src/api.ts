@@ -9,7 +9,7 @@ import type {
   TagDefinition,
   TagFormState,
   ProductionByGwResponse,
-  FaultByGwResponse,
+  FaultByGwResponse
 } from './types'
 
 
@@ -130,6 +130,7 @@ export function getProductionTodayByGw() {
 export function getFaultTodayByGw() {
   return request<FaultByGwResponse>('/api/production/fault-today-gw')
 }
+
 
 // ==================== 真实SCADA仿真系统 ====================
 // 1. 独立运行的仿真器，每秒采样状态

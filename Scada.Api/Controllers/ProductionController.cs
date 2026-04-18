@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using System.Globalization;
 
 namespace Scada.Api.Controllers;
 
@@ -234,6 +235,124 @@ public sealed class ProductionController : ControllerBase
 
         return Ok(response);
     }
+
+    [HttpGet("factory-test-report")]
+    public async Task<ActionResult<FactoryTestReportResponseDto>> GetFactoryTestReport(
+        [FromQuery] DateTime from,
+        [FromQuery] DateTime to,
+        [FromQuery] int? gw,
+        [FromQuery] string? orderNo,
+        CancellationToken cancellationToken)
+    {
+        if (from > to)
+        {
+            return BadRequest(new { message = "起始时间不能大于结束时间" });
+        }
+
+        const int maxRows = 2000;
+        var excludedColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ID", "mode", "tmJS" };
+        const string countSql = """
+            SELECT COUNT_BIG(1)
+            FROM dbo.Record
+            WHERE sj >= @from
+              AND sj <= @to
+              AND mode = 0
+              AND (@gw IS NULL OR [gw] = @gw)
+              AND (@orderNo IS NULL OR LTRIM(RTRIM(CONVERT(nvarchar(100), [OrderNo]))) = @orderNo);
+            """;
+
+        const string rowsSql = """
+            SELECT TOP (@maxRows) *
+            FROM dbo.Record
+            WHERE sj >= @from
+              AND sj <= @to
+              AND mode = 0
+              AND (@gw IS NULL OR [gw] = @gw)
+              AND (@orderNo IS NULL OR LTRIM(RTRIM(CONVERT(nvarchar(100), [OrderNo]))) = @orderNo)
+            ORDER BY sj DESC;
+            """;
+
+        var columns = new List<string>();
+        var rows = new List<Dictionary<string, string?>>();
+        int totalCount;
+
+        try
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using (var countCommand = new SqlCommand(countSql, connection))
+            {
+                countCommand.Parameters.AddWithValue("@from", from);
+                countCommand.Parameters.AddWithValue("@to", to);
+                countCommand.Parameters.AddWithValue("@gw", gw.HasValue ? gw.Value : DBNull.Value);
+                var normalizedOrderNo = string.IsNullOrWhiteSpace(orderNo) ? null : orderNo.Trim();
+                countCommand.Parameters.AddWithValue("@orderNo", normalizedOrderNo is null ? DBNull.Value : normalizedOrderNo);
+                totalCount = Convert.ToInt32(await countCommand.ExecuteScalarAsync(cancellationToken) ?? 0L);
+            }
+
+            await using var rowsCommand = new SqlCommand(rowsSql, connection);
+            rowsCommand.Parameters.AddWithValue("@from", from);
+            rowsCommand.Parameters.AddWithValue("@to", to);
+            rowsCommand.Parameters.AddWithValue("@gw", gw.HasValue ? gw.Value : DBNull.Value);
+            var rowsOrderNo = string.IsNullOrWhiteSpace(orderNo) ? null : orderNo.Trim();
+            rowsCommand.Parameters.AddWithValue("@orderNo", rowsOrderNo is null ? DBNull.Value : rowsOrderNo);
+            rowsCommand.Parameters.AddWithValue("@maxRows", maxRows);
+
+            await using var reader = await rowsCommand.ExecuteReaderAsync(cancellationToken);
+            for (var i = 0; i < reader.FieldCount; i++)
+            {
+                var columnName = reader.GetName(i);
+                if (!excludedColumns.Contains(columnName))
+                {
+                    columns.Add(columnName);
+                }
+            }
+
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var row = new Dictionary<string, string?>(reader.FieldCount, StringComparer.OrdinalIgnoreCase);
+                for (var i = 0; i < reader.FieldCount; i++)
+                {
+                    var name = reader.GetName(i);
+                    if (excludedColumns.Contains(name))
+                    {
+                        continue;
+                    }
+                    if (reader.IsDBNull(i))
+                    {
+                        row[name] = null;
+                        continue;
+                    }
+
+                    var value = reader.GetValue(i);
+                    row[name] = value switch
+                    {
+                        DateTime dateTime => dateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                        DateTimeOffset dateTimeOffset => dateTimeOffset.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                        _ => Convert.ToString(value, CultureInfo.InvariantCulture)
+                    };
+                }
+                rows.Add(row);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query factory test report from MSSQL");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "出厂测试报表查询失败" });
+        }
+
+        var now = DateTimeOffset.Now;
+        return Ok(new FactoryTestReportResponseDto(
+            from.ToString("yyyy-MM-dd HH:mm:ss"),
+            to.ToString("yyyy-MM-dd HH:mm:ss"),
+            totalCount,
+            rows.Count,
+            totalCount > rows.Count,
+            columns,
+            rows,
+            now.ToString("O")));
+    }
 }
 
 public sealed record ProductionByGwBucketDto(int Gw, int Count);
@@ -262,3 +381,13 @@ public sealed record FaultQuarterBucketDto(
     string Date,
     int Err,
     int Count);
+
+public sealed record FactoryTestReportResponseDto(
+    string From,
+    string To,
+    int TotalCount,
+    int ReturnedCount,
+    bool IsTruncated,
+    IReadOnlyList<string> Columns,
+    IReadOnlyList<Dictionary<string, string?>> Rows,
+    string GeneratedAt);

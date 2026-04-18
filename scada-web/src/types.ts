@@ -157,6 +157,7 @@ export interface FaultByGwResponse {
   generatedAt: string
 }
 
+
 export interface FaultQuarterBucket {
   date: string
   err: number

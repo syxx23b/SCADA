@@ -16,7 +16,26 @@ import { RecipeQYJ } from './components/RecipeQYJ'
 
 
 
-type ViewKey = 'dashboard' | 'efficiency' | 'fault' | 'production' | 'runtime' | 'tags' | 'recipeDj' | 'recipeQyj' | 'help' | 'login'
+type ViewKey =
+  | 'dashboard'
+  | 'factoryReportDj'
+  | 'factoryReportMotor'
+  | 'factoryReportQyj'
+  | 'factoryReportEngine'
+  | 'enduranceReportDj'
+  | 'enduranceReportMotor'
+  | 'enduranceReportQyj'
+  | 'enduranceReportEngine'
+  | 'efficiency'
+  | 'fault'
+  | 'production'
+  | 'runtime'
+  | 'tags'
+  | 'recipeDj'
+  | 'recipeQyj'
+  | 'reportConfig'
+  | 'help'
+  | 'login'
 type SidebarKey = ViewKey
 
 type RecipeTypeKey = 'DJRecipe' | 'QYJRecipe'
@@ -52,6 +71,28 @@ function ProductionSidebarIcon() {
   )
 }
 
+function DashboardSidebarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="9" y="2" width="5" height="3" rx="1" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="9" y="7" width="5" height="7" rx="1" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="2" y="9" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  )
+}
+
+function FactoryRecordSidebarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 2.5H9.2L13 6.3V13.5H3V2.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M9.2 2.5V6.3H13" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M5 8.2H11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M5 10.4H9.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function FaultSidebarIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -81,6 +122,17 @@ function UserLoginSidebarIcon() {
   )
 }
 
+function ReportConfigSidebarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2.3" y="2.3" width="11.4" height="11.4" rx="2" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5 5.5H11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M5 8H11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M5 10.5H8.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
   return collapsed ? (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -93,9 +145,16 @@ function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
   )
 }
 
-
 const baseSidebarItems: SidebarItem[] = [
-  { key: 'dashboard', label: '数据看板', icon: '⌂' },
+  { key: 'dashboard', label: '数据看板', icon: <DashboardSidebarIcon /> },
+  { key: 'factoryReportDj', label: '出厂记录-电机泵', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'factoryReportMotor', label: 'Factory Report-Motor', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'factoryReportQyj', label: '出厂记录-汽油机', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'factoryReportEngine', label: 'Factory Report-Engine', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'enduranceReportDj', label: '耐久报表-电机泵', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'enduranceReportMotor', label: 'Endurance Report-Motor', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'enduranceReportQyj', label: '耐久报表-汽油机', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'enduranceReportEngine', label: 'Endurance Report-Engine', icon: <FactoryRecordSidebarIcon /> },
   { key: 'efficiency', label: '效率分析', icon: <EfficiencySidebarIcon /> },
   { key: 'fault', label: '故障分析', icon: <FaultSidebarIcon /> },
   { key: 'production', label: '产量统计', icon: <ProductionSidebarIcon /> },
@@ -105,18 +164,85 @@ const baseSidebarItems: SidebarItem[] = [
 ]
 
 const protectedSidebarItems: SidebarItem[] = [
-  { key: 'runtime', label: '标签', icon: '⌗' },
+  { key: 'runtime', label: '标签', icon: '?' },
   { key: 'tags', label: '订阅', icon: '◎' },
+  { key: 'reportConfig', label: '报表配置', icon: <ReportConfigSidebarIcon /> },
 ]
-
-const reportServiceKeys = new Set<SidebarKey>(['efficiency', 'fault', 'production'])
 
 const dashboardFaceplateIndexes = [1, 2] as const
 
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'batch') return 'tags'
-  return value === 'dashboard' || value === 'efficiency' || value === 'fault' || value === 'production' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'help' || value === 'login' ? value : 'dashboard'
+  return value === 'dashboard' || value === 'factoryReportDj' || value === 'factoryReportMotor' || value === 'factoryReportQyj' || value === 'factoryReportEngine' || value === 'enduranceReportDj' || value === 'enduranceReportMotor' || value === 'enduranceReportQyj' || value === 'enduranceReportEngine' || value === 'efficiency' || value === 'fault' || value === 'production' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'reportConfig' || value === 'help' || value === 'login' ? value : 'dashboard'
+}
+
+const FACTORY_REPORT_PARAMS = 'ref_t=design&ref_c=5d7ff465-26b4-4e0c-baca-346f29bfb3c7'
+const FACTORY_REPORT_ENCODED_PATH = 'QYJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt'
+const FACTORY_REPORT_CN_PATH = 'QYJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt'
+const REPORT_VISIBILITY_STORAGE_KEY = 'scada-web.report-visibility'
+type FactoryReportKey = 'factoryReportDj' | 'factoryReportMotor' | 'factoryReportQyj' | 'factoryReportEngine'
+type ReportKey = FactoryReportKey | 'enduranceReportDj' | 'enduranceReportMotor' | 'enduranceReportQyj' | 'enduranceReportEngine'
+const REPORT_SERVICE_KEYS: ReportKey[] = [
+  'factoryReportDj',
+  'factoryReportMotor',
+  'factoryReportQyj',
+  'factoryReportEngine',
+  'enduranceReportDj',
+  'enduranceReportMotor',
+  'enduranceReportQyj',
+  'enduranceReportEngine',
+]
+
+const REPORTS: Record<ReportKey, { title: string; subtitle: string; iframeUrl: string; openUrl: string }> = {
+  factoryReportDj: {
+    title: '出厂记录-电机泵',
+    subtitle: 'DJ report integration test',
+    iframeUrl: `/webroot/decision/view/report?viewlet=DJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=DJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+  },
+  factoryReportMotor: {
+    title: 'Factory Report-Motor',
+    subtitle: 'Motor report integration test',
+    iframeUrl: `/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
+  },
+  factoryReportQyj: {
+    title: '出厂记录-汽油机',
+    subtitle: 'QYJ report integration test',
+    iframeUrl: `/webroot/decision/view/report?viewlet=${FACTORY_REPORT_CN_PATH}&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=${FACTORY_REPORT_CN_PATH}&${FACTORY_REPORT_PARAMS}`,
+  },
+  factoryReportEngine: {
+    title: 'Factory Report-Engine',
+    subtitle: 'Engine report integration test',
+    iframeUrl: `/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
+  },
+  enduranceReportDj: {
+    title: '耐久报表-电机泵',
+    subtitle: 'DJ endurance report integration test',
+    iframeUrl: `/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+  },
+  enduranceReportMotor: {
+    title: 'Endurance Report-Motor',
+    subtitle: 'DJ endurance report integration test',
+    iframeUrl: `/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
+  },
+  enduranceReportQyj: {
+    title: '耐久报表-汽油机',
+    subtitle: 'QYJ endurance report integration test',
+    iframeUrl: `/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+  },
+  enduranceReportEngine: {
+    title: 'Endurance Report-Engine',
+    subtitle: 'QYJ endurance report integration test',
+    iframeUrl: `/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
+  },
 }
 
 
@@ -639,6 +765,25 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
+  const previousViewRef = useRef<ViewKey>(view)
+  const [reportVisibility, setReportVisibility] = useState<Record<ReportKey, boolean>>(() => {
+    const fallback = REPORT_SERVICE_KEYS.reduce((acc, key) => {
+      acc[key] = true
+      return acc
+    }, {} as Record<ReportKey, boolean>)
+
+    try {
+      const raw = window.localStorage.getItem(REPORT_VISIBILITY_STORAGE_KEY)
+      if (!raw) return fallback
+      const parsed = JSON.parse(raw) as Partial<Record<ReportKey, boolean>>
+      return REPORT_SERVICE_KEYS.reduce((acc, key) => {
+        acc[key] = parsed[key] ?? true
+        return acc
+      }, {} as Record<ReportKey, boolean>)
+    } catch {
+      return fallback
+    }
+  })
   const [writeDrafts, setWriteDrafts] = useState<Record<string, string>>({})
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [browserSearch, setBrowserSearch] = useState('')
@@ -1031,7 +1176,19 @@ function App() {
   }
 
 
-  const sidebarItems = useMemo(() => (isAuthenticated ? [...baseSidebarItems, ...protectedSidebarItems] : baseSidebarItems), [isAuthenticated])
+  const sidebarItems = useMemo(() => {
+    const visibleBaseSidebarItems = baseSidebarItems.filter((item) => {
+      if (!REPORT_SERVICE_KEYS.includes(item.key as ReportKey)) return true
+      return reportVisibility[item.key as ReportKey] ?? true
+    })
+    return isAuthenticated ? [...visibleBaseSidebarItems, ...protectedSidebarItems] : visibleBaseSidebarItems
+  }, [isAuthenticated, reportVisibility])
+  const reportConfigItems = REPORT_SERVICE_KEYS.map((key) => ({
+    key,
+    title: REPORTS[key].title,
+    subtitle: REPORTS[key].subtitle,
+    visible: reportVisibility[key],
+  }))
   const groups = useMemo(() => {
     const values = runtime.tags.map((tag) => getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag))
     return sortGroupOptions(values)
@@ -1505,11 +1662,33 @@ function App() {
   useEffect(() => { if (!selectedDeviceId && activeDeviceId) setSelectedDeviceId(activeDeviceId) }, [activeDeviceId, selectedDeviceId])
   useEffect(() => { setSelectedTagGroupFilter('all') }, [activeDeviceId])
   useEffect(() => {
-    if (!isAuthenticated && (view === 'runtime' || view === 'tags')) {
+    if (!isAuthenticated && (view === 'runtime' || view === 'tags' || view === 'reportConfig')) {
       setView('login')
-      setStatusMessage('请先登录后再访问标签、订阅页面')
+      setStatusMessage('请先登录后再访问标签、订阅、报表配置页面')
     }
   }, [isAuthenticated, view])
+  useEffect(() => {
+    const previousView = previousViewRef.current
+    previousViewRef.current = view
+    if (view === 'login' && previousView !== 'login' && !isAuthenticated) {
+      setLoginUsername('')
+      setLoginPassword('')
+    }
+  }, [isAuthenticated, view])
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(REPORT_VISIBILITY_STORAGE_KEY, JSON.stringify(reportVisibility))
+    } catch {
+      // ignore storage errors
+    }
+  }, [reportVisibility])
+  useEffect(() => {
+    const currentReportKey = view as ReportKey
+    if (!REPORT_SERVICE_KEYS.includes(currentReportKey)) return
+    if (reportVisibility[currentReportKey] !== false) return
+    setView('dashboard')
+    setStatusMessage('当前报表已在报表配置中隐藏')
+  }, [reportVisibility, view])
 
   useEffect(() => {
     if (!activeDeviceId) return
@@ -1666,9 +1845,9 @@ function App() {
 
 
   function handleSidebarClick(key: SidebarKey) {
-    if (!isAuthenticated && (key === 'runtime' || key === 'tags')) {
+    if (!isAuthenticated && (key === 'runtime' || key === 'tags' || key === 'reportConfig')) {
       setView('login')
-      setStatusMessage('请先登录后再访问标签、订阅页面')
+      setStatusMessage('请先登录后再访问标签、订阅、报表配置页面')
       return
     }
 
@@ -1682,7 +1861,7 @@ function App() {
       setIsAuthenticated(true)
       setLoginPassword('')
       setView('runtime')
-      setStatusMessage('登录成功，已开放标签与订阅菜单')
+      setStatusMessage('登录成功，已开放标签、订阅与报表配置菜单')
       return
     }
 
@@ -1719,13 +1898,14 @@ function App() {
     const isRuntime = mode === 'runtime'
     const hasRuntimeEntry = sidebarItems.some((item) => item.key === 'runtime')
     const isNavigationLocked = isSidebarCollapsed
+    const firstVisibleReportKey = sidebarItems.find((item) => REPORT_SERVICE_KEYS.includes(item.key as ReportKey))?.key
 
     const rendered = sidebarItems.flatMap((item) => {
       const itemClass = isRuntime ? (view === item.key ? 'runtime-nav active' : 'runtime-nav') : (view === item.key ? 'nav-item active' : 'nav-item')
       const iconClass = isRuntime ? 'runtime-nav-icon' : 'nav-icon'
       const labelClass = isRuntime ? 'runtime-nav-label' : 'nav-label'
       const itemTitle = isSidebarCollapsed ? item.label : undefined
-      const shouldRenderReportGroupTitle = item.key === 'efficiency' && !isSidebarCollapsed
+      const shouldRenderReportServiceTitle = item.key === firstVisibleReportKey && !isSidebarCollapsed
       const shouldRenderReportGroupTail = item.key === 'production' && !isSidebarCollapsed
 
       if (item.key === 'runtime') {
@@ -1740,7 +1920,7 @@ function App() {
                 disabled={isNavigationLocked}
                 title={isSidebarCollapsed ? (isAuthenticated ? '退出' : '登录') : undefined}
               >
-                <span className="sidebar-auth-icon">{isAuthenticated ? '↪' : <UserLoginSidebarIcon />}</span>
+                <span className="sidebar-auth-icon">{isAuthenticated ? '?' : <UserLoginSidebarIcon />}</span>
                 <span className="sidebar-auth-label">{isAuthenticated ? '退出' : '登录'}</span>
               </button>
             </div>
@@ -1758,12 +1938,14 @@ function App() {
         ]
       }
 
-      const prefix = shouldRenderReportGroupTitle
-        ? [
-            <div key={`report-group-divider-${mode}`} className="sidebar-divider" aria-hidden="true" />,
-            <div key={`report-group-title-${mode}`} className="sidebar-group-title">{reportServiceKeys.has(item.key) ? '报表服务' : ''}</div>,
-          ]
-        : []
+      const prefix: ReactNode[] = []
+      if (shouldRenderReportServiceTitle) {
+        prefix.push(
+          <div key={`report-service-title-${mode}`} className="sidebar-group-title">
+            报表服务
+          </div>,
+        )
+      }
       const suffix = shouldRenderReportGroupTail ? [<div key={`report-group-tail-${mode}`} className="sidebar-divider" aria-hidden="true" />] : []
 
       return [
@@ -1834,7 +2016,7 @@ function App() {
             <h1>清洗机测试系统</h1>
           </div>
           <div className="runtime-topbar-actions">
-            <button type="button" className="icon-circle">◔</button>
+            <button type="button" className="icon-circle">?</button>
             <button type="button" className="icon-circle">?</button>
             <div className="avatar-circle">SC</div>
           </div>
@@ -1971,7 +2153,7 @@ function App() {
         <div className="dashboard-topbar-meta">
           <span className="dashboard-topbar-pill normal">模板: HMI_DB.Faceplates[1] / [2]</span>
           <button type="button" className="dashboard-icon-button" aria-label="通知">
-            •
+            ?
           </button>
           <button type="button" className="dashboard-icon-button" aria-label="帮助">
             ?
@@ -2137,6 +2319,35 @@ function App() {
     </section>
   )
 
+  const renderFactoryReportPage = (key: ReportKey) => {
+    const report = REPORTS[key]
+    return (
+      <section className="page-shell">
+        <header className="page-header">
+          <div className="page-copy">
+            <h1>{report.title}</h1>
+            <p>{report.subtitle}</p>
+          </div>
+          <div className="page-meta">
+            <a className="primary-action" href={report.openUrl} target="_blank" rel="noreferrer">
+              新窗口打开
+            </a>
+          </div>
+        </header>
+
+        <section className="content-strip" style={{ padding: 0, flex: 1, minHeight: 0 }}>
+          <iframe
+            title={report.title}
+            src={report.iframeUrl}
+            style={{ width: '100%', height: '100%', minHeight: 'calc(100vh - 180px)', border: 0, display: 'block' }}
+          />
+        </section>
+
+        <div className="toast-line">{statusMessage}</div>
+      </section>
+    )
+  }
+
   const efficiencyPage = (
     <>
       <EfficiencyAnalysis
@@ -2197,7 +2408,7 @@ function App() {
               <input type="checkbox" checked={checked} onChange={() => toggleBrowse(node)} aria-label={node.displayName} />
             ) : (
               <button type="button" className="tree-toggle-icon" onClick={() => toggleBrowse(node)} aria-label={`${expanded ? '收起' : '展开'} ${node.displayName}`}>
-                {expanded ? '−' : '+'}
+                {expanded ? '?' : '+'}
               </button>
             )}
           </div>
@@ -2473,6 +2684,62 @@ function App() {
     </section>
   )
 
+  function setReportServiceVisible(key: ReportKey, visible: boolean) {
+    setReportVisibility((current) => ({ ...current, [key]: visible }))
+  }
+
+  function resetReportServiceVisibility() {
+    setReportVisibility(() => REPORT_SERVICE_KEYS.reduce((acc, key) => {
+      acc[key] = true
+      return acc
+    }, {} as Record<ReportKey, boolean>))
+  }
+
+  const reportConfigPage = (
+    <section className="page-shell">
+      <header className="page-header">
+        <div className="page-copy">
+          <h1>报表配置</h1>
+          <p>配置报表服务下各报表是否在侧边栏显示，设置会自动保存</p>
+        </div>
+        <div className="panel-actions panel-actions-in-head">
+          <span className="status-line">已显示 {reportConfigItems.filter((item) => item.visible).length} / {reportConfigItems.length}</span>
+          <button type="button" className="primary-action" onClick={resetReportServiceVisibility}>全部恢复显示</button>
+        </div>
+      </header>
+
+      <section className="content-strip">
+        <div className="config-card">
+          <div className="config-card-head">
+            <div className="config-card-title">报表服务</div>
+            <div className="config-card-subtitle">仅登录后可见；开关关闭后，侧边栏将隐藏对应报表入口</div>
+          </div>
+
+          <div className="report-config-list">
+            {reportConfigItems.map((item) => (
+              <label key={item.key} className="report-config-item">
+                <span className="report-config-info">
+                  <strong>{item.title}</strong>
+                  <span>{item.subtitle}</span>
+                </span>
+                <span className="report-config-toggle">
+                  <input
+                    type="checkbox"
+                    checked={item.visible}
+                    onChange={(event) => setReportServiceVisible(item.key, event.target.checked)}
+                  />
+                  <span>{item.visible ? '显示' : '隐藏'}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div className="toast-line">{statusMessage}</div>
+    </section>
+  )
+
   const [isInIframe, setIsInIframe] = useState(false)
 
   useEffect(() => {
@@ -2494,7 +2761,7 @@ function App() {
         {isInIframe ? (
           <div className="help-iframe-notice">
             <div className="help-notice-content">
-              <h3>📄 PDF 文档</h3>
+              <h3>?? PDF 文档</h3>
               <p>由于 IDE 内置预览限制，PDF 无法正常显示。</p>
               <p>请在外部浏览器中打开本页面查看帮助文档。</p>
               <a href="/help/manual" target="_blank" rel="noopener noreferrer" className="primary-action">
@@ -2518,7 +2785,7 @@ function App() {
       <header className="page-header">
         <div className="page-copy">
           <h1>用户登录</h1>
-          <p>登录后才显示“标签”和“订阅”菜单</p>
+          <p>登录后才显示“标签”、“订阅”和“报表配置”菜单</p>
         </div>
       </header>
 
@@ -2531,18 +2798,18 @@ function App() {
           {isAuthenticated ? (
             <div className="login-success">
               <strong>当前已登录用户：ZXC</strong>
-              <p>你现在可以使用“标签”和“订阅”两项功能。</p>
+              <p>你现在可以使用“标签”、“订阅”和“报表配置”三项功能。</p>
               <button type="button" className="login-submit" onClick={handleLogout}>退出登录</button>
             </div>
           ) : (
-            <form className="login-form" onSubmit={handleLoginSubmit}>
+            <form className="login-form" onSubmit={handleLoginSubmit} autoComplete="off">
               <label>
                 <span>用户名</span>
-                <input className="login-input" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} placeholder="请输入用户名" autoComplete="username" />
+                <input className="login-input" name="login-username" value={loginUsername} onChange={(e) => setLoginUsername(e.target.value)} placeholder="请输入用户名" autoComplete="off" />
               </label>
               <label>
                 <span>密码</span>
-                <input className="login-input" type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="请输入密码" autoComplete="current-password" />
+                <input className="login-input" name="login-password" type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="请输入密码" autoComplete="new-password" />
               </label>
               <button type="submit" className="login-submit">登录</button>
             </form>
@@ -2580,15 +2847,25 @@ function App() {
   )
 
   if (view === 'dashboard') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{dashboardPage}</main></div>
+  if (view === 'factoryReportDj') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{renderFactoryReportPage('factoryReportDj')}</main></div>
+  if (view === 'factoryReportMotor') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{renderFactoryReportPage('factoryReportMotor')}</main></div>
+  if (view === 'factoryReportQyj') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{renderFactoryReportPage('factoryReportQyj')}</main></div>
+  if (view === 'factoryReportEngine') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{renderFactoryReportPage('factoryReportEngine')}</main></div>
+  if (view === 'enduranceReportDj') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{renderFactoryReportPage('enduranceReportDj')}</main></div>
+  if (view === 'enduranceReportMotor') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{renderFactoryReportPage('enduranceReportMotor')}</main></div>
+  if (view === 'enduranceReportQyj') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{renderFactoryReportPage('enduranceReportQyj')}</main></div>
+  if (view === 'enduranceReportEngine') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{renderFactoryReportPage('enduranceReportEngine')}</main></div>
   if (view === 'efficiency') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{efficiencyPage}</main></div>
   if (view === 'fault') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{faultPage}</main></div>
   if (view === 'production') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{productionPage}</main></div>
   if (view === 'runtime') return isAuthenticated ? runtimePage : <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{loginPage}</main></div>
 
   if (view === 'tags') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? tagsPage : loginPage}</main></div>
+  if (view === 'reportConfig') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? reportConfigPage : loginPage}</main></div>
   if (view === 'recipeDj' || view === 'recipeQyj') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{recipePage}</main></div>
   return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{view === 'help' ? helpPage : loginPage}</main></div>
 }
 
 
 export default App
+
