@@ -774,12 +774,14 @@ export function RecipeQYJ({
 
       {/* 配方同步区域 */}
       {(() => {
-        // QYJ配方同步目标：Recipe_DB.QYJRecipe[1] 和 Recipe_DB.QYJRecipe[2]
+        // QYJ配方同步目标：Recipe_DB.QYJRecipe[1/2].xxx，以及 Recipe_DB.RecipeName[1/2]
         // 源字段：Local.RecipeQYJ.xxx -> 目标字段：Recipe_DB.QYJRecipe[1].xxx / Recipe_DB.QYJRecipe[2].xxx
 
         const getTargetFieldKey = (tag: TagDefinition): string | null => {
           const candidates = [tag.displayName, tag.browseName, tag.nodeId]
           const patterns = [
+            /^Recipe_DB\.RecipeName\[(\d+)\]$/i,
+            /^Recipe_DB_RecipeName(?:\[(\d+)\])?$/i,
             /^Recipe_DB\.(?:QYJRecipe|QYIRecipe)\[(\d+)\]\.(.+)$/i,
             /^Recipe_DB_(?:QYJRecipe|QYIRecipe)(?:\[(\d+)\])?_(.+)$/i,
           ] as const
@@ -789,6 +791,7 @@ export function RecipeQYJ({
             for (const p of patterns) {
               const m = v.match(p)
               if (m) {
+                if (m[2] === undefined) return 'recipeName'
                 return m[2].trim().replace(/^_+/, '')
               }
             }
@@ -828,11 +831,12 @@ export function RecipeQYJ({
         }
 
         const syncTo = async (recipeIndex: 1 | 2) => {
+          const recipeNameTarget = `recipe_db.recipename[${recipeIndex}]`
           const targets = allTags.filter((tag) => {
             const candidates = [tag.displayName, tag.browseName, tag.nodeId]
             return candidates.some((raw) => {
               const value = normalizeTagPath(raw ?? '').toLowerCase()
-              return value.includes(`recipe_db.qyjrecipe[${recipeIndex}].`) || value.includes(`recipe_db.qyirecipe[${recipeIndex}].`)
+              return value === recipeNameTarget || value.includes(`recipe_db.qyjrecipe[${recipeIndex}].`) || value.includes(`recipe_db.qyirecipe[${recipeIndex}].`)
             })
           })
 

@@ -812,11 +812,10 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
 
     private static object? ConvertValue(JsonElement element, string dataType)
     {
-        return dataType switch
+        var normalizedType = dataType.Trim();
+        return normalizedType switch
         {
-            "Boolean" => element.ValueKind is JsonValueKind.True or JsonValueKind.False
-                ? element.GetBoolean()
-                : bool.Parse(element.GetString() ?? "false"),
+            "Boolean" => ConvertBooleanValue(element),
             "SByte" => element.ValueKind == JsonValueKind.Number ? element.GetSByte() : sbyte.Parse(element.GetString() ?? "0"),
             "Byte" => element.ValueKind == JsonValueKind.Number ? element.GetByte() : byte.Parse(element.GetString() ?? "0"),
             "Int16" => element.ValueKind == JsonValueKind.Number ? element.GetInt16() : short.Parse(element.GetString() ?? "0"),
@@ -831,6 +830,29 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
                 ? DateTime.Parse(element.GetString() ?? string.Empty)
                 : element.GetDateTime(),
             _ => element.ValueKind == JsonValueKind.String ? element.GetString() : element.ToString()
+        };
+    }
+
+    private static bool ConvertBooleanValue(JsonElement element)
+    {
+        return element.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number => element.GetDouble() != 0,
+            JsonValueKind.String => ParseBooleanString(element.GetString()),
+            _ => throw new FormatException($"Unsupported JSON value kind for Boolean: {element.ValueKind}.")
+        };
+    }
+
+    private static bool ParseBooleanString(string? rawValue)
+    {
+        var normalized = rawValue?.Trim().ToLowerInvariant() ?? string.Empty;
+        return normalized switch
+        {
+            "1" or "true" or "yes" or "on" => true,
+            "0" or "false" or "no" or "off" or "" => false,
+            _ => throw new FormatException($"Cannot convert '{rawValue}' to Boolean.")
         };
     }
 }

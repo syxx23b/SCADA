@@ -47,6 +47,11 @@ type FaceplateTrend = { pressure: HistoryPoint[]; flow: HistoryPoint[] }
 type SidebarItem = { key: SidebarKey; label: string; icon: ReactNode }
 type WriteOptions = { refreshRuntime?: boolean; successMessage?: string | null }
 
+const LOGIN_SOFTWARE_VERSION = 'SoftwareVersion'
+const LOGIN_GIT_VERSION = (import.meta.env.VITE_GIT_VERSION as string | undefined)?.trim() || 'unknown'
+const LOGIN_GIT_DATETIME = (import.meta.env.VITE_GIT_DATETIME as string | undefined)?.trim() || 'unknown'
+const LOGIN_SUBTITLE = `${LOGIN_SOFTWARE_VERSION}_${LOGIN_GIT_DATETIME}_Git:${LOGIN_GIT_VERSION}`
+
 function EfficiencySidebarIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -784,6 +789,7 @@ function App() {
       return fallback
     }
   })
+
   const [writeDrafts, setWriteDrafts] = useState<Record<string, string>>({})
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [browserSearch, setBrowserSearch] = useState('')
@@ -2793,6 +2799,7 @@ function App() {
         <div className="login-card">
           <div className="login-head">
             <h2>欢迎登录</h2>
+            <p>{LOGIN_SUBTITLE}</p>
           </div>
 
           {isAuthenticated ? (
@@ -2868,4 +2875,3 @@ function App() {
 
 
 export default App
-

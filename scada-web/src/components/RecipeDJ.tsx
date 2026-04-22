@@ -146,8 +146,8 @@ const MOTOR_TYPE_OPTIONS: readonly DictionaryOption[] = [
 ] as const
 
 const DC_HOLDING_POWER_OFF_OPTIONS: readonly DictionaryOption[] = [
-  { label: '否', value: '0' },
-  { label: '是', value: '1' },
+  { label: '是', value: '0' },
+  { label: '否', value: '1' },
 ] as const
 
 const DJ_GROUP_WEIGHT: Record<string, number> = {
@@ -180,7 +180,7 @@ const DJ_FIELD_META: Record<string, FieldMeta> = {
   holdingpressuredrop: { label: '保压压降', unit: 'MPa', group: '出厂测试' },
   self_priming: { label: '自吸能力', unit: 'KPa', group: '出厂测试' },
   self_primingtime: { label: '自吸时间', unit: '秒', group: '出厂测试' },
-  dcholdingpoweroff: { label: '关枪断电', unit: '', group: '全局设置' },
+  dcholdingpoweroff: { label: '关枪通电', unit: '', group: '全局设置' },
   endurancetime: { label: '耐久时间', unit: '小时', group: '耐久测试' },
   endurancetriggerontime: { label: '耐久开枪时间', unit: '秒', group: '耐久测试' },
   endurancetriggerofftime: { label: '耐久关枪时间', unit: '秒', group: '耐久测试' },
@@ -299,8 +299,8 @@ function getFieldOptions(fieldKey: string) {
 
 function normalizeDcHoldingPowerOffValue(rawValue: string) {
   const normalized = rawValue.trim().toLowerCase()
-  if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === '是') return '1'
-  if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === '否') return '0'
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === '否') return '1'
+  if (normalized === '0' || normalized === 'false' || normalized === 'no' || normalized === '是') return '0'
   return rawValue.trim()
 }
 
@@ -850,12 +850,14 @@ export function RecipeDJ({
 
       {/* 配方同步区域 */}
       {(() => {
-        // DJ配方同步目标：Recipe_DB.DJRecipe[1] 和 Recipe_DB.DJRecipe[2]
+        // DJ配方同步目标：Recipe_DB.DJRecipe[1/2].xxx，以及 Recipe_DB.RecipeName[1/2]
         // 源字段：Local.RecipeDJ.xxx -> 目标字段：Recipe_DB.DJRecipe[1].xxx / Recipe_DB.DJRecipe[2].xxx
 
         const getTargetFieldKey = (tag: TagDefinition): string | null => {
           const candidates = [tag.displayName, tag.browseName, tag.nodeId]
           const patterns = [
+            /^Recipe_DB\.RecipeName\[(\d+)\]$/i,
+            /^Recipe_DB_RecipeName(?:\[(\d+)\])?$/i,
             /^Recipe_DB\.DJRecipe\[(\d+)\]\.(.+)$/i,
             /^Recipe_DB_DJRecipe(?:\[(\d+)\])?_(.+)$/i,
           ] as const
@@ -865,6 +867,7 @@ export function RecipeDJ({
             for (const p of patterns) {
               const m = v.match(p)
               if (m) {
+                if (m[2] === undefined) return 'recipeName'
                 return m[2].trim().replace(/^_+/, '')
               }
             }
@@ -917,10 +920,14 @@ export function RecipeDJ({
         }
 
         const syncTo = async (recipeIndex: 1 | 2) => {
-          const targetPrefix = `Recipe_DB.DJRecipe[${recipeIndex}].`.toLowerCase()
+          const recipeNameTarget = `recipe_db.recipename[${recipeIndex}]`
+          const targetPrefix = `recipe_db.djrecipe[${recipeIndex}].`
           const targets = allTags.filter((tag) => {
             const candidates = [tag.displayName, tag.browseName, tag.nodeId]
-            return candidates.some((raw) => normalizeTagPath(raw ?? '').toLowerCase().includes(targetPrefix))
+            return candidates.some((raw) => {
+              const value = normalizeTagPath(raw ?? '').toLowerCase()
+              return value.includes(targetPrefix) || value === recipeNameTarget
+            })
           })
 
           if (targets.length === 0) {
