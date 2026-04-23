@@ -2,4 +2,5 @@
   <Project Path="Scada.Api.Tests/Scada.Api.Tests.csproj" />
   <Project Path="Scada.Api/Scada.Api.csproj" />
   <Project Path="Scada.OpcUa/Scada.OpcUa.csproj" />
+  <Project Path="Scada.Setup/Scada.Setup.csproj" />
 </Solution>

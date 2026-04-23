@@ -11,6 +11,11 @@ using System.Net.Http.Headers;
 using System.Net.Mime;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService(options =>
+{
+    options.ServiceName = "Scada.Api";
+});
+
 var scadaConnectionString = ResolveSqliteConnectionString(
     builder.Configuration.GetConnectionString("ScadaDb") ?? "Data Source=scada.db",
     builder.Environment.ContentRootPath);

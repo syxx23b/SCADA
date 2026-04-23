@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Scada.Setup</RootNamespace>
+    <AssemblyName>Scada.Setup</AssemblyName>
+    <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Company>松门电器</Company>
+    <Authors>ZhangXC</Authors>
+    <Product>SCADA 安装程序</Product>
+    <Description>松门电器 SCADA 服务安装程序</Description>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DefaultPayloadSourceDir Condition="'$(DefaultPayloadSourceDir)' == ''">..\Scada.Api\bin\Release\net8.0\win-x64\publish</DefaultPayloadSourceDir>
+    <ServiceName Condition="'$(ServiceName)' == ''">ScadaApi</ServiceName>
+    <ServiceDisplayName Condition="'$(ServiceDisplayName)' == ''">SCADA API</ServiceDisplayName>
+    <InstallDirectory Condition="'$(InstallDirectory)' == ''">$(ProgramFiles)\Scada_Codex_Siemens</InstallDirectory>
+    <ServicePort Condition="'$(ServicePort)' == ''">5000</ServicePort>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="Properties\app.manifest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="$(IntermediateOutputPath)payload\**\*">
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <Visible>false</Visible>
+    </Content>
+  </ItemGroup>
+
+  <Target Name="PreparePayload" BeforeTargets="PrepareForPublish">
+    <RemoveDir Directories="$(IntermediateOutputPath)payload" />
+    <MakeDir Directories="$(IntermediateOutputPath)payload" />
+
+    <ItemGroup>
+      <_PayloadFiles Include="$(DefaultPayloadSourceDir)\**\*" />
+    </ItemGroup>
+
+    <Copy
+      SourceFiles="@(_PayloadFiles)"
+      DestinationFiles="@(_PayloadFiles->'$(IntermediateOutputPath)payload\%(RecursiveDir)%(Filename)%(Extension)')" />
+  </Target>
+
+</Project>
