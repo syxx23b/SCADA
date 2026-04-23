@@ -155,6 +155,20 @@ function ReportConfigSidebarIcon() {
   )
 }
 
+function TagSidebarIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M6.2 2.8H3.5C3.1 2.8 2.8 3.1 2.8 3.5V6.2C2.8 6.5 2.9 6.8 3.1 7L8.8 12.7C9.1 13 9.6 13 9.9 12.7L12.7 9.9C13 9.6 13 9.1 12.7 8.8L7 3.1C6.8 2.9 6.5 2.8 6.2 2.8Z"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      <circle cx="5.1" cy="5.1" r="0.7" fill="currentColor" />
+    </svg>
+  )
+}
+
 function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
   return collapsed ? (
     <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
@@ -186,7 +200,7 @@ const baseSidebarItems: SidebarItem[] = [
 ]
 
 const protectedSidebarItems: SidebarItem[] = [
-  { key: 'runtime', label: '标签', icon: '?' },
+  { key: 'runtime', label: '标签', icon: <TagSidebarIcon /> },
   { key: 'tags', label: '订阅', icon: '◎' },
   { key: 'reportConfig', label: '报表配置', icon: <ReportConfigSidebarIcon /> },
 ]
