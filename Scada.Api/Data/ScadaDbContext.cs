@@ -29,6 +29,7 @@ public sealed class ScadaDbContext : DbContext
         {
             entity.HasKey(item => item.Id);
             entity.Property(item => item.Name).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.DriverKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(item => item.EndpointUrl).HasMaxLength(256).IsRequired();
             entity.Property(item => item.SecurityMode).HasMaxLength(32).IsRequired();
             entity.Property(item => item.SecurityPolicy).HasMaxLength(64).IsRequired();

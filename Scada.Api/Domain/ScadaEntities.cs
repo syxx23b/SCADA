@@ -9,11 +9,19 @@ public enum DeviceConnectionStatus
     Faulted = 4
 }
 
+public enum DeviceDriverKind
+{
+    OpcUa = 0,
+    SiemensS7 = 1
+}
+
 public sealed class DeviceConnectionEntity
 {
     public Guid Id { get; set; } = Guid.NewGuid();
 
     public string Name { get; set; } = string.Empty;
+
+    public DeviceDriverKind DriverKind { get; set; } = DeviceDriverKind.OpcUa;
 
     public string EndpointUrl { get; set; } = string.Empty;
 

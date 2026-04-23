@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TagDefinition, TagSnapshot } from '../types'
 import './Recipe.css'
 
@@ -41,8 +41,19 @@ type RecipeRow = {
   updatedText: string
 }
 
+const SYNC_WRITE_TIMEOUT_MS = 4000
+
 type IndexedRecipeRow = RecipeRow & {
   seq: number
+}
+
+type FeedbackTone = 'success' | 'warning' | 'error'
+
+type SyncIssueRow = {
+  target: string
+  source: string
+  value: string
+  reason: string
 }
 
 const RECIPE_CARD_GROUPS = ['全局设置', '出厂测试', '耐久测试', '泵头性能'] as const
@@ -206,6 +217,10 @@ function extractFieldKey(tag: TagDefinition) {
   return null
 }
 
+function findTagByFieldKey(tags: TagDefinition[], fieldKey: string) {
+  return tags.find((tag) => extractFieldKey(tag)?.toLowerCase() === fieldKey.toLowerCase()) ?? null
+}
+
 function getFieldMeta(fieldKey: string) {
   return QYJ_FIELD_META[fieldKey.toLowerCase()]
 }
@@ -249,6 +264,14 @@ function normalizeNumericText(rawValue: string) {
   return `${sign}${normalizedIntegerPart}${decimalPart}`
 }
 
+function normalizeNoBarcodeStartValue(rawValue: string) {
+  const normalized = rawValue.trim().toLowerCase()
+  if (normalized === '89' || normalized === 'yes' || normalized === 'true') return '89'
+  if (normalized === '78' || normalized === 'no' || normalized === 'false') return '78'
+  if (normalized === '0') return '89'
+  return rawValue.trim()
+}
+
 function getSnapshotRawValue(snapshot: TagSnapshot | undefined) {
   if (snapshot?.value === null || snapshot?.value === undefined || snapshot.value === '') return ''
   if (typeof snapshot.value === 'boolean') return snapshot.value ? '1' : '0'
@@ -259,7 +282,9 @@ function resolveDictionaryValue(fieldKey: string, valueText: string) {
   const options = getFieldOptions(fieldKey)
   if (!options) return valueText
 
-  const normalized = normalizeNumericText(valueText)
+  const key = fieldKey.toLowerCase()
+  const raw = normalizeNumericText(valueText)
+  const normalized = key === 'nobarcodestart' ? normalizeNoBarcodeStartValue(raw) : raw
   if (!normalized || normalized === '—') return options[0].value
 
   const matchedByValue = options.find((item) => item.value === normalized)
@@ -273,10 +298,12 @@ function resolveDictionaryValue(fieldKey: string, valueText: string) {
 function formatSnapshotValue(fieldKey: string, tag: TagDefinition, snapshot: TagSnapshot | undefined) {
   const options = getFieldOptions(fieldKey)
   if (options) {
+    const key = fieldKey.toLowerCase()
     const rawValue = snapshot?.value === null || snapshot?.value === undefined || snapshot.value === ''
       ? options[0].value
       : normalizeNumericText(String(snapshot.value))
-    return options.find((item) => item.value === rawValue)?.label ?? rawValue
+    const normalizedValue = key === 'nobarcodestart' ? normalizeNoBarcodeStartValue(rawValue) : rawValue
+    return options.find((item) => item.value === normalizedValue)?.label ?? normalizedValue
   }
 
   if (snapshot?.value === null || snapshot?.value === undefined || snapshot.value === '') return '—'
@@ -461,6 +488,8 @@ export function RecipeQYJ({
   recipe1SyncLabel,
   recipe2SyncLabel,
 }: RecipeQYJProps) {
+  const noBarcodeStartTag = useMemo(() => findTagByFieldKey(sourceTags, 'noBarcodeStart'), [sourceTags])
+  const noBarcodeEnforceRef = useRef<string>('')
 
   // 配方名称输入框状态（独立于型号标签）
   const [recipeFileName, setRecipeFileName] = useState('')
@@ -470,8 +499,11 @@ export function RecipeQYJ({
 
   // 反馈消息状态
   const [feedbackMessage, setFeedbackMessage] = useState<string>('')
+  const [feedbackTone, setFeedbackTone] = useState<FeedbackTone>('success')
+  const [syncIssueRows, setSyncIssueRows] = useState<SyncIssueRow[]>([])
   const [deletingRecipeId, setDeletingRecipeId] = useState<string | null>(null)
   const [pendingDeleteRecipeId, setPendingDeleteRecipeId] = useState<string | null>(null)
+  const feedbackTimerRef = useRef<number | null>(null)
 
 
 
@@ -496,13 +528,59 @@ export function RecipeQYJ({
     }
   }, [pendingDeleteRecipeId, selectedRecipeId])
 
+  useEffect(() => {
+    if (!noBarcodeStartTag?.allowWrite) return
+    if (savingTagId === noBarcodeStartTag.id) return
+
+    const snapshot = snapshots.get(noBarcodeStartTag.id)
+    if (!snapshot) return
+
+    const currentRaw = getSnapshotRawValue(snapshot).trim()
+    if (currentRaw === '78' || currentRaw === '89') {
+      noBarcodeEnforceRef.current = ''
+      return
+    }
+
+    const signature = `${snapshot.sourceTimestamp ?? ''}|${currentRaw}`
+    if (noBarcodeEnforceRef.current === signature) return
+    noBarcodeEnforceRef.current = signature
+
+    void onWrite(noBarcodeStartTag.id, '89')
+  }, [noBarcodeStartTag, onWrite, savingTagId, snapshots])
+
 
   // 显示反馈消息
 
-  const showFeedback = (message: string) => {
+  const showFeedback = (
+    message: string,
+    options?: { tone?: FeedbackTone; issueRows?: SyncIssueRow[]; durationMs?: number },
+  ) => {
+    const tone = options?.tone ?? 'success'
+    const issueRows = options?.issueRows ?? []
+    const durationMs = options?.durationMs ?? (issueRows.length > 0 ? 15000 : 3000)
+
     setFeedbackMessage(message)
-    setTimeout(() => setFeedbackMessage(''), 3000)
+    setFeedbackTone(tone)
+    setSyncIssueRows(issueRows)
+
+    if (feedbackTimerRef.current !== null) {
+      window.clearTimeout(feedbackTimerRef.current)
+    }
+
+    feedbackTimerRef.current = window.setTimeout(() => {
+      setFeedbackMessage('')
+      setSyncIssueRows([])
+      feedbackTimerRef.current = null
+    }, durationMs)
   }
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimerRef.current !== null) {
+        window.clearTimeout(feedbackTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleNewRecipe = () => {
     setRecipeFileName('')
@@ -724,8 +802,35 @@ export function RecipeQYJ({
 
       {/* 反馈消息框 */}
       {feedbackMessage && (
-        <div className="recipe-feedback">
-          {feedbackMessage}
+        <div className={`recipe-feedback recipe-feedback-${feedbackTone}`}>
+          <div className="recipe-feedback-message">{feedbackMessage}</div>
+          {syncIssueRows.length > 0 ? (
+            <div className="recipe-feedback-issues">
+              <table className="recipe-feedback-table">
+                <thead>
+                  <tr>
+                    <th>Target</th>
+                    <th>Source</th>
+                    <th>Value</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {syncIssueRows.slice(0, 30).map((item, index) => (
+                    <tr key={`${item.target}-${item.source}-${index}`}>
+                      <td title={item.target}>{item.target}</td>
+                      <td title={item.source}>{item.source}</td>
+                      <td>{item.value}</td>
+                      <td>{item.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {syncIssueRows.length > 30 ? (
+                <div className="recipe-feedback-truncated">Only first 30 issue rows are shown.</div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -830,13 +935,39 @@ export function RecipeQYJ({
           'flowmax': 'Local.RecipeQYJ.flowMax',
         }
 
+        const getTagLabel = (tag: TagDefinition) => normalizeTagPath(tag.displayName || tag.browseName || tag.nodeId)
+
+        const matchesRecipeIndex = (normalizedPath: string, expectedIndex: number) => {
+          const recipeNameMatch = normalizedPath.match(/^recipe_db\.recipename\[(\d+)\]$/i)
+          if (recipeNameMatch) return Number(recipeNameMatch[1]) === expectedIndex
+
+          const qyjRecipeMatch = normalizedPath.match(/^recipe_db\.(?:qyjrecipe|qyirecipe)\[(\d+)\]\./i)
+          if (qyjRecipeMatch) return Number(qyjRecipeMatch[1]) === expectedIndex
+
+          const qyjRecipeUnderscoreMatch = normalizedPath.match(/^recipe_db_(?:qyjrecipe|qyirecipe)(?:\[(\d+)\])?_/i)
+          if (qyjRecipeUnderscoreMatch) return Number(qyjRecipeUnderscoreMatch[1] ?? `${expectedIndex}`) === expectedIndex
+
+          return false
+        }
+
         const syncTo = async (recipeIndex: 1 | 2) => {
-          const recipeNameTarget = `recipe_db.recipename[${recipeIndex}]`
+          showFeedback(`开始同步到 Recipe_DB.QYJRecipe[${recipeIndex}]...`, {
+            tone: 'warning',
+            durationMs: 4000,
+          })
+
+          const sourceTagByFieldKey = new Map<string, TagDefinition>()
+          for (const sourceTag of sourceTags) {
+            const sourceFieldKey = extractFieldKey(sourceTag)
+            if (!sourceFieldKey) continue
+            sourceTagByFieldKey.set(sourceFieldKey.toLowerCase(), sourceTag)
+          }
+
           const targets = allTags.filter((tag) => {
             const candidates = [tag.displayName, tag.browseName, tag.nodeId]
             return candidates.some((raw) => {
               const value = normalizeTagPath(raw ?? '').toLowerCase()
-              return value === recipeNameTarget || value.includes(`recipe_db.qyjrecipe[${recipeIndex}].`) || value.includes(`recipe_db.qyirecipe[${recipeIndex}].`)
+              return matchesRecipeIndex(value, recipeIndex)
             })
           })
 
@@ -848,26 +979,47 @@ export function RecipeQYJ({
           let writeCount = 0
           let failedCount = 0
           let skippedCount = 0
+          const issueRows: SyncIssueRow[] = []
 
           for (const targetTag of targets) {
+            const targetLabel = getTagLabel(targetTag)
             const fieldKey = getTargetFieldKey(targetTag)
             if (!fieldKey) {
               skippedCount += 1
+              issueRows.push({
+                target: targetLabel,
+                source: '-',
+                value: '-',
+                reason: 'Unknown target field',
+              })
               continue
             }
 
             const sourceVarName = QYJ_FIELD_MAP[fieldKey.toLowerCase()]
             if (!sourceVarName) {
               skippedCount += 1
+              issueRows.push({
+                target: targetLabel,
+                source: fieldKey,
+                value: '-',
+                reason: 'Field mapping missing',
+              })
               continue
             }
 
             if (!targetTag.allowWrite) {
               failedCount += 1
+              issueRows.push({
+                target: targetLabel,
+                source: sourceVarName,
+                value: '-',
+                reason: 'Target tag is read-only (allowWrite=false)',
+              })
               continue
             }
 
             let sourceValue = ''
+            let sourceMissing = false
             if (sourceVarName === 'Local.RecipeName') {
               const sourceTag = sourceTags.find((tag) => {
                 const candidates = [tag.displayName, tag.browseName, tag.nodeId]
@@ -879,37 +1031,91 @@ export function RecipeQYJ({
               if (sourceTag) {
                 const snap = snapshots.get(sourceTag.id)
                 sourceValue = snap?.value !== undefined && snap?.value !== null ? String(snap.value) : ''
+              } else {
+                sourceMissing = true
+                issueRows.push({
+                  target: targetLabel,
+                  source: sourceVarName,
+                  value: '-',
+                  reason: 'Source tag not found',
+                })
               }
             } else {
               const sourceField = sourceVarName.replace('Local.RecipeQYJ.', '')
-              const sourceTag = rows.find((row) => row.fieldKey.toLowerCase() === sourceField.toLowerCase())?.tag
+              const sourceTag = sourceTagByFieldKey.get(sourceField.toLowerCase())
               if (sourceTag) {
                 const snap = getSnapshotOrSimulated(sourceTag, sourceField, snapshots)
                 sourceValue = getSnapshotRawValue(snap)
+              } else {
+                sourceMissing = true
+                issueRows.push({
+                  target: targetLabel,
+                  source: sourceVarName,
+                  value: '-',
+                  reason: 'Source tag not found',
+                })
               }
             }
 
-            if (sourceValue === '') {
+            if (fieldKey.toLowerCase() === 'nobarcodestart') {
+              const normalizedNoBarcodeValue = normalizeNoBarcodeStartValue(sourceValue)
+              sourceValue = normalizedNoBarcodeValue === '78' || normalizedNoBarcodeValue === '89'
+                ? normalizedNoBarcodeValue
+                : '89'
+            }
+
+            if (sourceMissing) {
               skippedCount += 1
               continue
             }
 
-            const succeeded = await onWrite(targetTag.id, sourceValue)
+            if (sourceValue === '') {
+              skippedCount += 1
+              issueRows.push({
+                target: targetLabel,
+                source: sourceVarName,
+                value: '(empty)',
+                reason: 'Source value is empty',
+              })
+              continue
+            }
+
+            const succeeded = await Promise.race<boolean>([
+              onWrite(targetTag.id, sourceValue),
+              new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), SYNC_WRITE_TIMEOUT_MS)),
+            ])
             if (succeeded) writeCount += 1
-            else failedCount += 1
+            else {
+              failedCount += 1
+              issueRows.push({
+                target: targetLabel,
+                source: sourceVarName,
+                value: sourceValue,
+                reason: `Write failed or timeout(>${SYNC_WRITE_TIMEOUT_MS}ms)`,
+              })
+            }
           }
 
           if (writeCount === 0 && failedCount === 0) {
-            showFeedback(`未找到可同步到 Recipe_DB.QYJRecipe[${recipeIndex}] 的有效参数`)
+            showFeedback(`未找到可同步到 Recipe_DB.QYJRecipe[${recipeIndex}] 的有效参数`, {
+              tone: 'warning',
+              issueRows,
+            })
             return
           }
 
           if (failedCount > 0) {
-            showFeedback(`同步完成：成功 ${writeCount} 项，失败 ${failedCount} 项，跳过 ${skippedCount} 项`)
+            showFeedback(`同步完成：成功 ${writeCount} 项，失败 ${failedCount} 项，跳过 ${skippedCount} 项`, {
+              tone: 'error',
+              issueRows,
+            })
             return
           }
 
-          showFeedback(`已同步 ${writeCount} 个参数到 Recipe_DB.QYJRecipe[${recipeIndex}]${skippedCount > 0 ? `，跳过 ${skippedCount} 项` : ''}`)
+          showFeedback(`已同步 ${writeCount} 个参数到 Recipe_DB.QYJRecipe[${recipeIndex}]${skippedCount > 0 ? `，跳过 ${skippedCount} 项` : ''}`, {
+            tone: skippedCount > 0 ? 'warning' : 'success',
+            issueRows: skippedCount > 0 ? issueRows : [],
+          })
         }
 
 

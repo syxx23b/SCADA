@@ -26,4 +26,9 @@ public sealed class TagSnapshotCache
     {
         _snapshots.TryRemove(tagId, out _);
     }
+
+    public void Clear()
+    {
+        _snapshots.Clear();
+    }
 }

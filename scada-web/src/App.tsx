@@ -1,12 +1,11 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
-import type { FormEvent, ReactNode } from 'react'
+import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, createTag, deleteTag, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, getFaultTodayByGw, openVncTool, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+import { browseDevice, connectDevice, createDevice, createTag, deleteTag, disconnectDevice, exportAllTagsExcel, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, getFaultTodayByGw, importTagsExcelReplace, openVncTool, updateDevice, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
 
-import { isOpcUaTagStatusOk } from './tagStatus'
-import type { BrowseNode, DeviceConnection, EfficiencyTimelineResponse, FaultByGwResponse, ProductionByGwResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
+import type { BrowseNode, DeviceConnection, DeviceFormState, EfficiencyTimelineResponse, FaultByGwResponse, ProductionByGwResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
 import { EfficiencyAnalysis } from './components/EfficiencyAnalysis'
 import { FaultAnalysis } from './components/FaultAnalysis'
 import { ProductionStatistics } from './components/ProductionStatistics'
@@ -40,12 +39,30 @@ type SidebarKey = ViewKey
 
 type RecipeTypeKey = 'DJRecipe' | 'QYJRecipe'
 type RuntimeStatus = { label: '正常' | '异常'; className: 'normal' | 'fault' }
+const LOCAL_DEVICE_ID = '__local__'
 
 type HistoryPoint = { ts: number; value: number }
 type DashboardField = { tag?: TagDefinition; snapshot?: TagSnapshot; healthy: boolean; numeric: number | null; text: string; emptyText: string }
 type FaceplateTrend = { pressure: HistoryPoint[]; flow: HistoryPoint[] }
 type SidebarItem = { key: SidebarKey; label: string; icon: ReactNode }
 type WriteOptions = { refreshRuntime?: boolean; successMessage?: string | null }
+
+const EMPTY_DEVICE_FORM: DeviceFormState = {
+  name: '',
+  driverKind: 'OpcUa',
+  endpointUrl: '',
+  securityMode: 'None',
+  securityPolicy: 'None',
+  authMode: 'Anonymous',
+  username: '',
+  password: '',
+  autoConnect: true,
+}
+
+const DRIVER_LABELS: Record<string, string> = {
+  OpcUa: 'OPC UA',
+  SiemensS7: 'Siemens S7',
+}
 
 const LOGIN_SOFTWARE_VERSION = 'SoftwareVersion'
 const LOGIN_GIT_VERSION = (import.meta.env.VITE_GIT_VERSION as string | undefined)?.trim() || 'unknown'
@@ -174,7 +191,34 @@ const protectedSidebarItems: SidebarItem[] = [
   { key: 'reportConfig', label: '报表配置', icon: <ReportConfigSidebarIcon /> },
 ]
 
-const dashboardFaceplateIndexes = [1, 2] as const
+const dashboardFaceplateIndexes = [1, 2, 3, 4] as const
+const DASHBOARD_TEMPLATE_FIELDS = [
+  'barcode',
+  'automode0_factory1_endurance',
+  'current',
+  'enduranceprocess',
+  'errcode',
+  'failnumber',
+  'flow',
+  'frequency',
+  'inletpressure',
+  'inlettemp',
+  'lasttimehour',
+  'lasttimeminute',
+  'nozzlesize',
+  'passnumber',
+  'power',
+  'powerfactor',
+  'pressure',
+  'siphon',
+  'speed',
+  'stationnumber',
+  'triggercount',
+  'triggeroffprocess',
+  'triggeronprocess',
+  'voltage',
+  'workflow',
+] as const
 
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
@@ -204,49 +248,49 @@ const REPORTS: Record<ReportKey, { title: string; subtitle: string; iframeUrl: s
     title: '出厂记录-电机泵',
     subtitle: 'DJ report integration test',
     iframeUrl: `/webroot/decision/view/report?viewlet=DJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
-    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=DJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `/webroot/decision/view/report?viewlet=DJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
   },
   factoryReportMotor: {
     title: 'Factory Report-Motor',
     subtitle: 'Motor report integration test',
     iframeUrl: `/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
-    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
   },
   factoryReportQyj: {
     title: '出厂记录-汽油机',
     subtitle: 'QYJ report integration test',
     iframeUrl: `/webroot/decision/view/report?viewlet=${FACTORY_REPORT_CN_PATH}&${FACTORY_REPORT_PARAMS}`,
-    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=${FACTORY_REPORT_CN_PATH}&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `/webroot/decision/view/report?viewlet=${FACTORY_REPORT_CN_PATH}&${FACTORY_REPORT_PARAMS}`,
   },
   factoryReportEngine: {
     title: 'Factory Report-Engine',
     subtitle: 'Engine report integration test',
     iframeUrl: `/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
-    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
   },
   enduranceReportDj: {
     title: '耐久报表-电机泵',
     subtitle: 'DJ endurance report integration test',
     iframeUrl: `/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
-    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
   },
   enduranceReportMotor: {
     title: 'Endurance Report-Motor',
     subtitle: 'DJ endurance report integration test',
     iframeUrl: `/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
-    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
   },
   enduranceReportQyj: {
     title: '耐久报表-汽油机',
     subtitle: 'QYJ endurance report integration test',
     iframeUrl: `/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
-    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
   },
   enduranceReportEngine: {
     title: 'Endurance Report-Engine',
     subtitle: 'QYJ endurance report integration test',
     iframeUrl: `/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
-    openUrl: `http://localhost:8080/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
+    openUrl: `/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
   },
 }
 
@@ -763,6 +807,7 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [savingTagId, setSavingTagId] = useState<string | null>(null)
   const [savingBatch, setSavingBatch] = useState(false)
+  const [savingDevice, setSavingDevice] = useState(false)
   const [statusMessage, setStatusMessage] = useState('系统已就绪')
   const [groupFilter, setGroupFilter] = useState('all')
   const [selectedTagGroupFilter, setSelectedTagGroupFilter] = useState('all')
@@ -792,6 +837,7 @@ function App() {
 
   const [writeDrafts, setWriteDrafts] = useState<Record<string, string>>({})
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
+  const [deviceDraft, setDeviceDraft] = useState<DeviceFormState>(EMPTY_DEVICE_FORM)
   const [browserSearch, setBrowserSearch] = useState('')
   const [expandedBrowseNodes, setExpandedBrowseNodes] = useState<Record<string, boolean>>({})
   const [browseCache, setBrowseCache] = useState<Record<string, BrowseNode[]>>({})
@@ -799,24 +845,43 @@ function App() {
   const [selectedBrowseNodes, setSelectedBrowseNodes] = useState<BrowseNode[]>([])
   const [batchDrafts, setBatchDrafts] = useState<TagFormState[]>([])
   const batchSectionRef = useRef<HTMLElement | null>(null)
+  const importTagsFileInputRef = useRef<HTMLInputElement | null>(null)
   const efficiencyRequestPendingRef = useRef(false)
   const [dashboardTrendByFaceplate, setDashboardTrendByFaceplate] = useState<Record<number, FaceplateTrend>>({
 
     1: { pressure: [], flow: [] },
     2: { pressure: [], flow: [] },
+    3: { pressure: [], flow: [] },
+    4: { pressure: [], flow: [] },
   })
+  const dashboardTagMapByFaceplateRef = useRef<Record<number, Map<string, TagDefinition>>>({})
+  const snapshotByTagIdRef = useRef<Map<string, TagSnapshot>>(new Map())
+  const runtimeDeviceStatusByIdRef = useRef<Record<string, string>>({})
 
   const runtimeNameById = useMemo(() => Object.fromEntries(runtime.devices.map((d) => [d.deviceId, d.deviceName])), [runtime.devices])
   const runtimeDeviceStatusById = useMemo(() => Object.fromEntries(runtime.devices.map((d) => [d.deviceId, d.status])), [runtime.devices])
   const deviceNameById = useMemo(() => Object.fromEntries(devices.map((d) => [d.id, d.name])), [devices])
   const snapshotByTagId = useMemo(() => new Map(runtime.snapshots.map((snapshot) => [snapshot.tagId, snapshot])), [runtime.snapshots])
-  const activeDeviceId = selectedDeviceId || devices[0]?.id || runtime.devices[0]?.deviceId || ''
-  const activeDeviceName = deviceNameById[activeDeviceId] || runtimeNameById[activeDeviceId] || '当前设备'
+  const hasLocalTags = useMemo(() => tagRows.some((tag) => isLocalVariableTag(tag)), [tagRows])
+  const selectableDevices = useMemo(() => {
+    const base = devices.map((device) => ({ id: device.id, name: device.name, driverKind: device.driverKind }))
+    return hasLocalTags ? [...base, { id: LOCAL_DEVICE_ID, name: 'Local', driverKind: 'Local' }] : base
+  }, [devices, hasLocalTags])
+  const activeDeviceId = selectedDeviceId || selectableDevices[0]?.id || devices[0]?.id || runtime.devices[0]?.deviceId || ''
+  const activeDeviceName = activeDeviceId === LOCAL_DEVICE_ID ? 'Local' : (deviceNameById[activeDeviceId] || runtimeNameById[activeDeviceId] || '当前设备')
+  const selectedDevice = useMemo(() => devices.find((device) => device.id === activeDeviceId) ?? null, [activeDeviceId, devices])
+  const isSiemensDevice = selectedDevice?.driverKind === 'SiemensS7'
   const rootBrowseKey = `${activeDeviceId}|__root__`
   const rootBrowseNodes = browseCache[rootBrowseKey] ?? []
   const rootBrowseLoading = Boolean(browseLoadingKeys[rootBrowseKey])
   const hasLoadedRootBrowse = Object.prototype.hasOwnProperty.call(browseCache, rootBrowseKey)
-  const selectedDeviceTags = useMemo(() => tagRows.filter((tag) => tag.deviceId === activeDeviceId), [activeDeviceId, tagRows])
+  const selectedDeviceTags = useMemo(() => {
+    if (activeDeviceId === LOCAL_DEVICE_ID) {
+      return tagRows.filter((tag) => isLocalVariableTag(tag))
+    }
+
+    return tagRows.filter((tag) => tag.deviceId === activeDeviceId && !isLocalVariableTag(tag))
+  }, [activeDeviceId, tagRows])
   const selectedDeviceTagGroups = useMemo(() => {
     const values = selectedDeviceTags.map((tag) => getResolvedGroup(activeDeviceName, tag))
     return sortGroupOptions(values)
@@ -827,6 +892,7 @@ function App() {
   }, [activeDeviceName, selectedDeviceTags, selectedTagGroupFilter])
   const batchRows = batchDrafts
   const activeRecipeType: RecipeTypeKey = view === 'recipeQyj' ? 'QYJRecipe' : 'DJRecipe'
+  const isSiemensDraft = deviceDraft.driverKind === 'SiemensS7'
 
   // 配方文件管理状态 - 从服务器加载
   const [djRecipeFiles, setDjRecipeFiles] = useState<Array<{ id: string; name: string; createdAt: string; updatedAt: string }>>([])
@@ -846,6 +912,25 @@ function App() {
 
     setStatusMessage(message)
   }
+
+  const resetDeviceDraft = useCallback(() => {
+    setDeviceDraft(EMPTY_DEVICE_FORM)
+  }, [])
+
+  const loadDeviceIntoDraft = useCallback((device: DeviceConnection) => {
+    setDeviceDraft({
+      id: device.id,
+      name: device.name,
+      driverKind: device.driverKind,
+      endpointUrl: device.endpointUrl,
+      securityMode: device.securityMode,
+      securityPolicy: device.securityPolicy,
+      authMode: device.authMode,
+      username: device.username ?? '',
+      password: '',
+      autoConnect: device.autoConnect,
+    })
+  }, [])
 
   // 从服务器加载配方列表
   const loadRecipes = async () => {
@@ -1200,44 +1285,73 @@ function App() {
     return sortGroupOptions(values)
   }, [runtime.tags, runtimeNameById])
 
-  function faceplatePathPrefix(faceplateIndex: number) {
-    return new RegExp(`^HMI_DB\\.(?:HMI_Faceplates|Faceplates)\\[${faceplateIndex}\\]\\.`, 'i')
+  function parseDashboardFieldFromName(value: string) {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+
+    const barcodeMatch = /^hmi_db\.barcode\[(\d+)\]$/i.exec(trimmed)
+    if (barcodeMatch) {
+      return { templateIndex: Number(barcodeMatch[1]), fieldKey: 'barcode' }
+    }
+
+    const faceplateMatch = /^hmi_db\.(?:hmi_faceplates|faceplates)\[(\d+)\]\.([a-z0-9_]+)$/i.exec(trimmed)
+    if (!faceplateMatch) return null
+    return { templateIndex: Number(faceplateMatch[1]), fieldKey: faceplateMatch[2].toLowerCase() }
   }
 
-  function faceplateBarcodePattern(faceplateIndex: number) {
-    return new RegExp(`^HMI_DB\\.barcode\\[${faceplateIndex}\\]$`, 'i')
+  function parseDashboardTemplateField(tag: TagDefinition) {
+    const candidates = [tag.displayName, tag.browseName, getDisplayName(tag.nodeId)]
+      .map((item) => (item ?? '').trim())
+      .filter(Boolean)
+
+    for (const candidate of candidates) {
+      const parsed = parseDashboardFieldFromName(candidate)
+      if (parsed) return parsed
+    }
+
+    return null
   }
 
-  function shortLabelForFaceplate(tag: TagDefinition, faceplateIndex: number) {
-    const displayName = getDisplayName(tag.nodeId)
-    const faceplatePrefix = faceplatePathPrefix(faceplateIndex)
-    if (faceplatePrefix.test(displayName)) return displayName.replace(faceplatePrefix, '')
-    if (faceplateBarcodePattern(faceplateIndex).test(displayName)) return 'barcode'
-    return displayName
-  }
+  const dashboardTagMapByFaceplate = useMemo(() => {
+    const fieldSet = new Set<string>(DASHBOARD_TEMPLATE_FIELDS)
+    const indexSet = new Set<number>(dashboardFaceplateIndexes)
+    const result: Record<number, Map<string, TagDefinition>> = {}
+
+    for (const index of dashboardFaceplateIndexes) {
+      result[index] = new Map<string, TagDefinition>()
+    }
+
+    for (const tag of runtime.tags) {
+      if (isLocalVariableTag(tag)) continue
+      const parsed = parseDashboardTemplateField(tag)
+      if (!parsed) continue
+      if (!indexSet.has(parsed.templateIndex)) continue
+      if (!fieldSet.has(parsed.fieldKey)) continue
+      result[parsed.templateIndex].set(parsed.fieldKey, tag)
+    }
+
+    return result
+  }, [dashboardFaceplateIndexes, runtime.tags])
 
   const dashboardTagsByFaceplate = useMemo(() => {
     const result: Record<number, TagDefinition[]> = {}
     for (const index of dashboardFaceplateIndexes) {
-      const prefix = faceplatePathPrefix(index)
-      const barcodePattern = faceplateBarcodePattern(index)
-      result[index] = runtime.tags.filter((tag) => {
-        const displayName = getDisplayName(tag.nodeId)
-        return prefix.test(displayName) || barcodePattern.test(displayName)
-      })
+      result[index] = Array.from(dashboardTagMapByFaceplate[index]?.values() ?? [])
     }
     return result
-  }, [dashboardFaceplateIndexes, runtime.tags])
+  }, [dashboardFaceplateIndexes, dashboardTagMapByFaceplate])
 
-  const dashboardTagMapByFaceplate = useMemo(() => {
-    const result: Record<number, Map<string, TagDefinition>> = {}
-    for (const index of dashboardFaceplateIndexes) {
-      result[index] = new Map(
-        (dashboardTagsByFaceplate[index] ?? []).map((tag) => [shortLabelForFaceplate(tag, index).toLowerCase(), tag] as const),
-      )
-    }
-    return result
-  }, [dashboardFaceplateIndexes, dashboardTagsByFaceplate])
+  useEffect(() => {
+    dashboardTagMapByFaceplateRef.current = dashboardTagMapByFaceplate
+  }, [dashboardTagMapByFaceplate])
+
+  useEffect(() => {
+    snapshotByTagIdRef.current = snapshotByTagId
+  }, [snapshotByTagId])
+
+  useEffect(() => {
+    runtimeDeviceStatusByIdRef.current = runtimeDeviceStatusById
+  }, [runtimeDeviceStatusById])
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -1245,31 +1359,45 @@ function App() {
       setDashboardTrendByFaceplate((current) => {
         const next: Record<number, FaceplateTrend> = { ...current }
         for (const index of dashboardFaceplateIndexes) {
-          const map = dashboardTagMapByFaceplate[index]
-          const tags = dashboardTagsByFaceplate[index] ?? []
-          const pressureTag = map.get('pressure') ?? tags.find((item) => /pressure|press/i.test(shortLabelForFaceplate(item, index)))
-          const flowTag = map.get('flow') ?? tags.find((item) => /flow/i.test(shortLabelForFaceplate(item, index)))
-          const pressureValue = toNumericValue(pressureTag ? snapshotByTagId.get(pressureTag.id)?.value ?? null : null)
-          const flowValue = toNumericValue(flowTag ? snapshotByTagId.get(flowTag.id)?.value ?? null : null)
-          const keepAfter = now - 120_000
+          const map = dashboardTagMapByFaceplateRef.current[index]
+          if (!map) continue
+          const pressureTag = map.get('pressure')
+          const flowTag = map.get('flow')
+          if (!pressureTag && !flowTag) continue
+
           const trend = current[index] ?? { pressure: [], flow: [] }
+          const pressureSnapshot = pressureTag ? snapshotByTagIdRef.current.get(pressureTag.id) : undefined
+          const flowSnapshot = flowTag ? snapshotByTagIdRef.current.get(flowTag.id) : undefined
+          const pressureHealthy = pressureTag
+            ? isHealthySnapshot(pressureTag, pressureSnapshot, runtimeDeviceStatusByIdRef.current[pressureTag.deviceId])
+            : false
+          const flowHealthy = flowTag
+            ? isHealthySnapshot(flowTag, flowSnapshot, runtimeDeviceStatusByIdRef.current[flowTag.deviceId])
+            : false
+          const pressureValue = pressureHealthy ? toNumericValue(pressureSnapshot?.value ?? null) : null
+          const flowValue = flowHealthy ? toNumericValue(flowSnapshot?.value ?? null) : null
+          if (pressureValue === null && flowValue === null) continue
+
+          const keepAfter = now - 120_000
+
           next[index] = {
-            pressure: [...trend.pressure, { ts: now, value: pressureValue ?? 0 }].filter((item) => item.ts >= keepAfter),
-            flow: [...trend.flow, { ts: now, value: flowValue ?? 0 }].filter((item) => item.ts >= keepAfter),
+            pressure: (pressureValue === null
+              ? trend.pressure
+              : [...trend.pressure, { ts: now, value: pressureValue }]).filter((item) => item.ts >= keepAfter),
+            flow: (flowValue === null
+              ? trend.flow
+              : [...trend.flow, { ts: now, value: flowValue }]).filter((item) => item.ts >= keepAfter),
           }
         }
         return next
       })
     }, 500)
     return () => window.clearInterval(timer)
-  }, [dashboardFaceplateIndexes, dashboardTagMapByFaceplate, dashboardTagsByFaceplate, snapshotByTagId])
+  }, [dashboardFaceplateIndexes])
 
-  function dashboardField(faceplateIndex: number, name: string, fallbackPattern?: RegExp): DashboardField {
-    const tags = dashboardTagsByFaceplate[faceplateIndex] ?? []
+  function dashboardField(faceplateIndex: number, name: string): DashboardField {
     const tagMap = dashboardTagMapByFaceplate[faceplateIndex]
-    const tag =
-      tagMap.get(name.toLowerCase()) ??
-      (fallbackPattern ? tags.find((item) => fallbackPattern.test(shortLabelForFaceplate(item, faceplateIndex).toLowerCase())) : undefined)
+    const tag = tagMap.get(name.toLowerCase())
     const key = name.toLowerCase()
     const digitsMap: Record<string, number> = {
       voltage: 1,
@@ -1296,30 +1424,38 @@ function App() {
 
   const dashboardDataList = useMemo(() => {
     return dashboardFaceplateIndexes.map((faceplateIndex) => {
-    const pressure = dashboardField(faceplateIndex, 'pressure', /pressure|press/)
-    const flow = dashboardField(faceplateIndex, 'flow', /flow/)
-    const inletPressure = dashboardField(faceplateIndex, 'inletpressure', /inletpressure|inletpress/)
-    const inletTemp = dashboardField(faceplateIndex, 'inlettemp', /inlettemp|temperature|temp/)
-    const voltage = dashboardField(faceplateIndex, 'voltage', /voltage/)
-    const current = dashboardField(faceplateIndex, 'current', /current/)
-    const frequency = dashboardField(faceplateIndex, 'frequency', /frequency|freq/)
-    const power = dashboardField(faceplateIndex, 'power', /power$/)
-    const passNumber = dashboardField(faceplateIndex, 'passnumber', /passnumber/)
-    const failNumber = dashboardField(faceplateIndex, 'failnumber', /failnumber/)
-    const errCode = dashboardField(faceplateIndex, 'errcode', /errcode/)
-    const workFlow = dashboardField(faceplateIndex, 'workflow', /workflow/)
-    const enduranceProcess = dashboardField(faceplateIndex, 'enduranceprocess', /enduranceprocess/)
-    const triggerOn = dashboardField(faceplateIndex, 'triggeronprocess', /triggeronprocess/)
-    const triggerOff = dashboardField(faceplateIndex, 'triggeroffprocess', /triggeroffprocess/)
-    const triggerCount = dashboardField(faceplateIndex, 'triggercount', /triggercount|trigger_count/)
-    const lastTimeHour = dashboardField(faceplateIndex, 'lasttimehour', /lasttimehour/)
-    const lastTimeMinute = dashboardField(faceplateIndex, 'lasttimeminute', /lasttimeminute/)
-    const stationNumber = dashboardField(faceplateIndex, 'stationnumber', /stationnumber/)
-    const barcode = dashboardField(faceplateIndex, 'barcode', /barcode/)
+    const pressure = dashboardField(faceplateIndex, 'pressure')
+    const flow = dashboardField(faceplateIndex, 'flow')
+    const inletPressure = dashboardField(faceplateIndex, 'inletpressure')
+    const inletTemp = dashboardField(faceplateIndex, 'inlettemp')
+    const voltage = dashboardField(faceplateIndex, 'voltage')
+    const current = dashboardField(faceplateIndex, 'current')
+    const frequency = dashboardField(faceplateIndex, 'frequency')
+    const power = dashboardField(faceplateIndex, 'power')
+    const passNumber = dashboardField(faceplateIndex, 'passnumber')
+    const failNumber = dashboardField(faceplateIndex, 'failnumber')
+    const errCode = dashboardField(faceplateIndex, 'errcode')
+    const workFlow = dashboardField(faceplateIndex, 'workflow')
+    const enduranceProcess = dashboardField(faceplateIndex, 'enduranceprocess')
+    const triggerOn = dashboardField(faceplateIndex, 'triggeronprocess')
+    const triggerOff = dashboardField(faceplateIndex, 'triggeroffprocess')
+    const triggerCount = dashboardField(faceplateIndex, 'triggercount')
+    const lastTimeHour = dashboardField(faceplateIndex, 'lasttimehour')
+    const lastTimeMinute = dashboardField(faceplateIndex, 'lasttimeminute')
+    const stationNumber = dashboardField(faceplateIndex, 'stationnumber')
+    const barcode = dashboardField(faceplateIndex, 'barcode')
     const now = Date.now()
     const faceplateTrend = dashboardTrendByFaceplate[faceplateIndex] ?? { pressure: [], flow: [] }
-    const pressureSeries = faceplateTrend.pressure.length > 0 ? faceplateTrend.pressure : [{ ts: now, value: pressure.numeric ?? 0 }]
-    const flowSeries = faceplateTrend.flow.length > 0 ? faceplateTrend.flow : [{ ts: now, value: flow.numeric ?? 0 }]
+    const pressureSeries = faceplateTrend.pressure.length > 0
+      ? faceplateTrend.pressure
+      : pressure.numeric !== null
+        ? [{ ts: now, value: pressure.numeric }]
+        : []
+    const flowSeries = faceplateTrend.flow.length > 0
+      ? faceplateTrend.flow
+      : flow.numeric !== null
+        ? [{ ts: now, value: flow.numeric }]
+        : []
     const endurancePercent = Math.max(0, Math.min(100, Math.round(enduranceProcess.numeric ?? 0)))
     const triggerOnPercent = Math.max(0, Math.min(100, Math.round(triggerOn.numeric ?? 0)))
     const triggerOffPercent = Math.max(0, Math.min(100, Math.round(triggerOff.numeric ?? 0)))
@@ -1332,14 +1468,15 @@ function App() {
     const workflowValue = Math.round(workflowRaw ?? 0)
     const workflowText = workflowToLabel(workflowValue)
     const workflowClass = workflowValue === 0 ? 'standby' : 'running'
-    const enduranceMode = dashboardField(faceplateIndex, 'automode0_factory1_endurance', /automode0[_]?factory1[_]?endurance/)
+    const enduranceMode = dashboardField(faceplateIndex, 'automode0_factory1_endurance')
     const showEnduranceCard = Math.round(enduranceMode.numeric ?? 0) > 0
     const enduranceDuration = `${Math.max(0, lastTimeHour.numeric ?? 0)}h ${Math.max(0, lastTimeMinute.numeric ?? 0)}min`
     const faceplateTags = dashboardTagsByFaceplate[faceplateIndex] ?? []
     const hasConnectedDevice = faceplateTags.some((tag) => (runtimeDeviceStatusById[tag.deviceId] ?? '').toLowerCase() === 'connected')
     const hasGoodSnapshot = faceplateTags.some((tag) => {
       const snapshot = snapshotByTagId.get(tag.id)
-      return isOpcUaTagStatusOk(snapshot)
+      const deviceStatus = runtimeDeviceStatusById[tag.deviceId]
+      return isHealthySnapshot(tag, snapshot, deviceStatus)
     })
     const faceplateDeviceStatuses = Array.from(
       new Set(faceplateTags.map((tag) => (runtimeDeviceStatusById[tag.deviceId] ?? '').toLowerCase()).filter((value) => value !== '')),
@@ -1348,9 +1485,8 @@ function App() {
       status.includes('reconnect') || status.includes('disconnect') || status.includes('offline') || status.includes('fault') || status.includes('error'),
     )
     const connected = hasConnectedDevice && !hasDeviceDisconnecting && hasGoodSnapshot
-    const hasStateValue = errCodeRaw !== null || workflowRaw !== null
     const boardHeadClass =
-      !hasStateValue
+      !connected
         ? 'disconnected'
         : (errCodeRaw ?? 0) > 0
           ? 'fault'
@@ -1395,8 +1531,8 @@ function App() {
       triggerOn: maskField(triggerOn),
       triggerOff: maskField(triggerOff),
       triggerCount: maskField(triggerCount),
-      pressureSeries: connected ? pressureSeries : [],
-      flowSeries: connected ? flowSeries : [],
+      pressureSeries,
+      flowSeries,
       endurancePercent: connected ? endurancePercent : 0,
       passPercent: connected ? passPercent : 0,
       failPercent: connected ? failPercent : 0,
@@ -1428,18 +1564,20 @@ function App() {
   const dashboardSyncTargets = useMemo(() => {
     const recipe1 = dashboardDataList.find((item) => item.faceplateIndex === 1)
     const recipe2 = dashboardDataList.find((item) => item.faceplateIndex === 2)
+    const recipe1Mapped = (dashboardTagsByFaceplate[1] ?? []).length > 0
+    const recipe2Mapped = (dashboardTagsByFaceplate[2] ?? []).length > 0
 
     return {
       recipe1: {
-        visible: recipe1?.boardHeadClass === 'standby',
+        visible: recipe1Mapped,
         label: recipe1?.title ?? '工位1',
       },
       recipe2: {
-        visible: recipe2?.boardHeadClass === 'standby',
+        visible: recipe2Mapped,
         label: recipe2?.title ?? '工位2',
       },
     }
-  }, [dashboardDataList])
+  }, [dashboardDataList, dashboardTagsByFaceplate])
 
 
   const filteredRuntimeTags = useMemo(() => {
@@ -1616,6 +1754,66 @@ function App() {
     }
   }
 
+  async function handleSaveDevice() {
+    if (!deviceDraft.name.trim()) {
+      setStatusMessage('请输入设备名称')
+      return
+    }
+
+    if (!deviceDraft.endpointUrl.trim()) {
+      setStatusMessage(isSiemensDraft ? '请输入 PLC 地址或 Webserver 地址' : '请输入 OPC UA Endpoint URL')
+      return
+    }
+
+    try {
+      setSavingDevice(true)
+      if (deviceDraft.id) {
+        await updateDevice(deviceDraft.id, deviceDraft)
+        setStatusMessage(`设备 "${deviceDraft.name}" 已更新`)
+      } else {
+        await createDevice(deviceDraft)
+        setStatusMessage(`设备 "${deviceDraft.name}" 已创建`)
+      }
+
+      await loadWorkspace()
+      resetDeviceDraft()
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : '保存设备失败')
+    } finally {
+      setSavingDevice(false)
+    }
+  }
+
+  async function handleConnectSelectedDevice() {
+    if (!selectedDevice) {
+      setStatusMessage('请先选择设备')
+      return
+    }
+
+    try {
+      await connectDevice(selectedDevice.id)
+      await loadWorkspace()
+      setStatusMessage(`设备 "${selectedDevice.name}" 已发起连接`)
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : '连接设备失败')
+    }
+  }
+
+  async function handleDisconnectSelectedDevice() {
+    if (!selectedDevice) {
+      setStatusMessage('请先选择设备')
+      return
+    }
+
+    try {
+      await disconnectDevice(selectedDevice.id)
+      await loadWorkspace()
+      setStatusMessage(`设备 "${selectedDevice.name}" 已断开`)
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : '断开设备失败')
+    }
+  }
+
   useEffect(() => { void loadWorkspace() }, [])
 
   useEffect(() => {
@@ -1624,7 +1822,7 @@ function App() {
     void loadEfficiencyTimeline()
     const timer = window.setInterval(() => {
       void loadEfficiencyTimeline({ silent: true })
-    }, 10000)
+    }, 5000)
 
     return () => window.clearInterval(timer)
   }, [loadEfficiencyTimeline, view])
@@ -1670,7 +1868,7 @@ function App() {
   useEffect(() => {
     if (!isAuthenticated && (view === 'runtime' || view === 'tags' || view === 'reportConfig')) {
       setView('login')
-      setStatusMessage('请先登录后再访问标签、订阅、报表配置页面')
+      setStatusMessage('请先登录后再访问标签、订阅或报表配置页面')
     }
   }, [isAuthenticated, view])
   useEffect(() => {
@@ -1697,11 +1895,12 @@ function App() {
   }, [reportVisibility, view])
 
   useEffect(() => {
-    if (!activeDeviceId) return
+    if (!activeDeviceId || activeDeviceId === LOCAL_DEVICE_ID) return
     setExpandedBrowseNodes({})
     setSelectedBrowseNodes([])
+    if (isSiemensDevice) return
     void loadBrowse(activeDeviceId, null)
-  }, [activeDeviceId])
+  }, [activeDeviceId, isSiemensDevice])
 
   function focusBatchSection() {
     setView('tags')
@@ -1778,6 +1977,79 @@ function App() {
     setStatusMessage(`已载入 ${selectedDeviceTags.length} 个已订阅变量`)
     focusBatchSection()
   }
+
+  function addManualBatchAddress() {
+    if (!activeDeviceId) {
+      setStatusMessage('请先选择设备')
+      return
+    }
+
+    setBatchDrafts((current) => [
+      ...current,
+      {
+        deviceId: activeDeviceId,
+        nodeId: '',
+        browseName: '',
+        displayName: '',
+        dataType: 'Boolean',
+        samplingIntervalMs: 200,
+        publishingIntervalMs: 200,
+        allowWrite: true,
+        enabled: true,
+        groupKey: '未分组',
+      },
+    ])
+    setStatusMessage('已新增空白地址行，请在批量配置中填写绝对地址')
+    focusBatchSection()
+  }
+
+  async function handleExportAllTagsExcel() {
+    try {
+      setLoading(true)
+      const blob = await exportAllTagsExcel()
+      const url = window.URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `subscription_tags_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')}.xlsx`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.URL.revokeObjectURL(url)
+      setStatusMessage('订阅标签 Excel 已导出')
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : '导出 Excel 失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  function handlePickImportTagsExcel() {
+    importTagsFileInputRef.current?.click()
+  }
+
+  async function handleImportTagsExcel(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    const confirmed = window.confirm('导入后将用 Excel 内容替换所有订阅标签，是否继续？')
+    if (!confirmed) return
+
+    try {
+      setLoading(true)
+      const result = await importTagsExcelReplace(file)
+      await loadWorkspace()
+      await refreshRuntime()
+      setBatchDrafts([])
+      setSelectedBrowseNodes([])
+      setStatusMessage(`Excel 导入完成，已替换 ${result.created} 条标签，移除 ${result.removed} 条旧标签`)
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : '导入 Excel 失败')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   function clearBatchDrafts() { setBatchDrafts([]); setStatusMessage('已清空批量配置列表') }
   function applyBatchDefaults() {
     setBatchDrafts((current) => current.map((row) => {
@@ -1841,8 +2113,8 @@ function App() {
   }
 
   function editRuntimeTag(tag: TagDefinition) {
-    const deviceName = runtimeNameById[tag.deviceId] || activeDeviceName
-    setSelectedDeviceId(tag.deviceId)
+    const deviceName = isLocalVariableTag(tag) ? 'Local' : (runtimeNameById[tag.deviceId] || activeDeviceName)
+    setSelectedDeviceId(isLocalVariableTag(tag) ? LOCAL_DEVICE_ID : tag.deviceId)
     setBatchDrafts([draftFromTag(tag, deviceName)])
     focusBatchSection()
   }
@@ -1853,7 +2125,7 @@ function App() {
   function handleSidebarClick(key: SidebarKey) {
     if (!isAuthenticated && (key === 'runtime' || key === 'tags' || key === 'reportConfig')) {
       setView('login')
-      setStatusMessage('请先登录后再访问标签、订阅、报表配置页面')
+      setStatusMessage('请先登录后再访问标签、订阅或报表配置页面')
       return
     }
 
@@ -1993,29 +2265,6 @@ function App() {
 
   const runtimePage = (
     <section className={`runtime-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
-      <aside className={`runtime-sidebar${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
-        <div className="runtime-brand">
-          <div className="runtime-brand-mark">
-            <span className="brand-logo-text">清洗机测试系统</span>
-          </div>
-        </div>
-        <div className="sidebar-collapse-row">
-          <button
-            type="button"
-            className="sidebar-collapse-btn"
-            onClick={handleSidebarCollapseToggle}
-            aria-label={isSidebarCollapsed ? '展开侧边栏' : '收缩侧边栏'}
-            title={isSidebarCollapsed ? '展开' : '收缩'}
-          >
-            <span className="sidebar-collapse-icon"><SidebarCollapseIcon collapsed={isSidebarCollapsed} /></span>
-          </button>
-        </div>
-        <nav className="runtime-sidebar-nav" aria-label="主导航">
-          {renderSidebarButtons('runtime')}
-        </nav>
-
-      </aside>
-
       <section className="runtime-content">
         <header className="runtime-topbar">
           <div className="runtime-title-wrap">
@@ -2034,6 +2283,167 @@ function App() {
               <strong>设备连接状态</strong>
               <span className="status-line">{onlineDeviceCount}/{deviceStatusCards.length || 0} 正常连接 · 自动更新</span>
             </header>
+            <section className="devices-layout" aria-label="设备管理">
+              <article className="device-form-panel">
+                <div className="panel-head">
+                  <div>
+                    <div className="panel-title">{deviceDraft.id ? '编辑设备' : '新增设备'}</div>
+                    <div className="panel-subtitle">新增设备时可选择 `OPC UA` 或 `Siemens S7` 驱动</div>
+                  </div>
+                  <div className="panel-actions panel-actions-in-head">
+                    <button type="button" className="soft-action" onClick={resetDeviceDraft}>
+                      清空
+                    </button>
+                    <button type="button" className="primary-action" onClick={() => void handleSaveDevice()} disabled={savingDevice}>
+                      {savingDevice ? '保存中' : (deviceDraft.id ? '更新设备' : '创建设备')}
+                    </button>
+                  </div>
+                </div>
+                <div className="form-grid">
+                  <label>
+                    <span>设备名称</span>
+                    <input value={deviceDraft.name} onChange={(e) => setDeviceDraft((current) => ({ ...current, name: e.target.value }))} placeholder="例如：Line1 PLC" />
+                  </label>
+                  <label>
+                    <span>驱动类型</span>
+                    <select
+                      value={deviceDraft.driverKind}
+                      onChange={(e) => setDeviceDraft((current) => ({
+                        ...current,
+                        driverKind: e.target.value,
+                        securityMode: e.target.value === 'SiemensS7' ? 'None' : current.securityMode,
+                        securityPolicy: e.target.value === 'SiemensS7' ? 'None' : current.securityPolicy,
+                      }))}
+                    >
+                      <option value="OpcUa">OPC UA</option>
+                      <option value="SiemensS7">Siemens S7</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>{isSiemensDraft ? 'PLC 地址 / Webserver 地址' : 'Endpoint URL'}</span>
+                    <input
+                      value={deviceDraft.endpointUrl}
+                      onChange={(e) => setDeviceDraft((current) => ({ ...current, endpointUrl: e.target.value }))}
+                      placeholder={isSiemensDraft ? '例如：192.168.0.10 或 https://192.168.0.10' : '例如：opc.tcp://192.168.0.10:4840'}
+                    />
+                  </label>
+                  <label>
+                    <span>认证方式</span>
+                    <select value={deviceDraft.authMode} onChange={(e) => setDeviceDraft((current) => ({ ...current, authMode: e.target.value }))}>
+                      <option value="Anonymous">Anonymous</option>
+                      <option value="UsernamePassword">Username / Password</option>
+                    </select>
+                  </label>
+                  {!isSiemensDraft && (
+                    <>
+                      <label>
+                        <span>Security Mode</span>
+                        <select value={deviceDraft.securityMode} onChange={(e) => setDeviceDraft((current) => ({ ...current, securityMode: e.target.value }))}>
+                          <option value="None">None</option>
+                          <option value="Sign">Sign</option>
+                          <option value="SignAndEncrypt">SignAndEncrypt</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Security Policy</span>
+                        <select value={deviceDraft.securityPolicy} onChange={(e) => setDeviceDraft((current) => ({ ...current, securityPolicy: e.target.value }))}>
+                          <option value="None">None</option>
+                          <option value="Basic128Rsa15">Basic128Rsa15</option>
+                          <option value="Basic256">Basic256</option>
+                          <option value="Basic256Sha256">Basic256Sha256</option>
+                        </select>
+                      </label>
+                    </>
+                  )}
+                  {deviceDraft.authMode === 'UsernamePassword' && (
+                    <>
+                      <label>
+                        <span>用户名</span>
+                        <input value={deviceDraft.username} onChange={(e) => setDeviceDraft((current) => ({ ...current, username: e.target.value }))} placeholder="用户名" />
+                      </label>
+                      <label>
+                        <span>密码</span>
+                        <input type="password" value={deviceDraft.password} onChange={(e) => setDeviceDraft((current) => ({ ...current, password: e.target.value }))} placeholder="密码" />
+                      </label>
+                    </>
+                  )}
+                  <label className="inline-check">
+                    <input type="checkbox" checked={deviceDraft.autoConnect} onChange={(e) => setDeviceDraft((current) => ({ ...current, autoConnect: e.target.checked }))} />
+                    <span>启动时自动连接</span>
+                  </label>
+                </div>
+                <div className="panel-subtitle">
+                  {isSiemensDraft
+                    ? 'Siemens S7 驱动通过导入 DB 标签配置点位，并按现有采样参数轮询更新。'
+                    : 'OPC UA 驱动保持现有 Endpoint / SecurityMode / SecurityPolicy 连接方式。'}
+                </div>
+              </article>
+              <article className="device-list-panel">
+                <div className="panel-head">
+                  <div>
+                    <div className="panel-title">设备列表</div>
+                    <div className="panel-subtitle">选择设备后可编辑、连接、断开，再去浏览变量</div>
+                  </div>
+                  <div className="panel-actions panel-actions-in-head">
+                    <button type="button" className="soft-action" onClick={() => void loadWorkspace()} disabled={loading}>
+                      {loading ? '刷新中' : '刷新'}
+                    </button>
+                    <button type="button" className="soft-action" onClick={() => void handleConnectSelectedDevice()} disabled={!selectedDevice}>
+                      连接
+                    </button>
+                    <button type="button" className="soft-action" onClick={() => void handleDisconnectSelectedDevice()} disabled={!selectedDevice}>
+                      断开
+                    </button>
+                  </div>
+                </div>
+                <div className="table-shell compact-shell">
+                  <div className="table-scroll">
+                    <table className="list-table">
+                      <colgroup>
+                        <col />
+                        <col style={{ width: '110px' }} />
+                        <col style={{ width: '100px' }} />
+                        <col style={{ width: '84px' }} />
+                      </colgroup>
+                      <thead>
+                        <tr>
+                          <th>设备</th>
+                          <th>驱动</th>
+                          <th>状态</th>
+                          <th>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {devices.map((device) => (
+                          <tr key={device.id} className="list-row">
+                            <td>
+                              <strong>{device.name}</strong>
+                              <div className="node-meta">{device.endpointUrl}</div>
+                            </td>
+                            <td>{DRIVER_LABELS[device.driverKind] ?? device.driverKind}</td>
+                            <td>{device.status}</td>
+                            <td>
+                              <div className="row-actions">
+                                <button
+                                  type="button"
+                                  className="mini-button"
+                                  onClick={() => {
+                                    setSelectedDeviceId(device.id)
+                                    loadDeviceIntoDraft(device)
+                                  }}
+                                >
+                                  编辑
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </article>
+            </section>
             {deviceStatusCards.length === 0 ? (
               <div className="empty-note">暂无设备状态数据</div>
             ) : (
@@ -2041,7 +2451,7 @@ function App() {
                 {deviceStatusCards.map((device) => (
                   <div key={device.id} className={`runtime-device-status-item ${device.statusClassName}`}>
                     <div className="runtime-device-status-main">
-                      <span className="runtime-device-name">{device.name}</span>
+                      <span className="runtime-device-name">{device.name} · {DRIVER_LABELS[selectedDevice?.id === device.id ? selectedDevice.driverKind : (devices.find((item) => item.id === device.id)?.driverKind ?? 'OpcUa')] ?? 'OPC UA'}</span>
                       <span className="node-meta">{device.endpointUrl}</span>
                     </div>
                     <span className={`status-pill ${device.statusClassName}`}>{device.statusLabel}</span>
@@ -2440,7 +2850,7 @@ function App() {
       <header className="page-header">
         <div className="page-copy">
           <h1>变量订阅</h1>
-          <p>逐级浏览 OPC UA 目录，勾选叶子变量后进入批量配置</p>
+          <p>{isSiemensDevice ? 'Siemens S7 使用绝对地址模式。请手动新增地址并填写 NodeId（如 DB1.DBX0.0、DB1.DBW2）。' : '逐级浏览 OPC UA 变量目录，勾选叶子变量后进入批量配置。'}</p>
         </div>
         <div className="page-meta">
           <span className="status-line">{activeDeviceName} · {selectedBrowseNodes.length} 个已勾选</span>
@@ -2451,20 +2861,42 @@ function App() {
       </header>
 
       <section className="toolbar-row tags-toolbar">
+        <input
+          ref={importTagsFileInputRef}
+          type="file"
+          accept=".xlsx"
+          onChange={(event) => void handleImportTagsExcel(event)}
+          style={{ display: 'none' }}
+        />
         <select value={activeDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)}>
           <option value="">选择设备</option>
-          {devices.map((device) => (
+          {selectableDevices.map((device) => (
             <option key={device.id} value={device.id}>
               {device.name}
             </option>
           ))}
         </select>
         <input value={browserSearch} onChange={(e) => setBrowserSearch(e.target.value)} placeholder="搜索目录 / 变量 / NodeId" />
-        <button type="button" className="soft-action" onClick={() => setExpandedBrowseNodes({})}>
-          折叠全部
+        {isSiemensDevice ? null : (
+          <button type="button" className="soft-action" onClick={() => setExpandedBrowseNodes({})}>
+            折叠全部
+          </button>
+        )}
+        {isSiemensDevice ? null : (
+          <button type="button" className="soft-action" onClick={() => void loadBrowse(activeDeviceId, null, true)}>
+            刷新目录
+          </button>
+        )}
+        {isSiemensDevice ? (
+          <button type="button" className="soft-action" onClick={addManualBatchAddress} disabled={!activeDeviceId}>
+            手动新增地址
+          </button>
+        ) : null}
+        <button type="button" className="soft-action" onClick={() => void handleExportAllTagsExcel()} disabled={loading}>
+          导出 Excel
         </button>
-        <button type="button" className="soft-action" onClick={() => void loadBrowse(activeDeviceId, null, true)}>
-          刷新目录
+        <button type="button" className="soft-action" onClick={handlePickImportTagsExcel} disabled={loading}>
+          导入替换
         </button>
         <button type="button" className="soft-action" onClick={() => setSelectedBrowseNodes([])}>
           清空勾选
@@ -2475,11 +2907,19 @@ function App() {
         <div className="browser-panel">
           <div className="panel-head">
             <div>
-              <div className="panel-title">目录树</div>
-              <div className="panel-subtitle">目录节点展开显示，叶子节点才允许勾选</div>
+              <div className="panel-title">{isSiemensDevice ? 'DB 标签列表' : '目录树'}</div>
+              <div className="panel-subtitle">
+                {isSiemensDevice
+                  ? '绝对地址模式下不依赖在线目录树，可参考下方样例地址直接手工填写。'
+                  : '目录节点展开显示，叶子节点才允许勾选'}
+              </div>
             </div>
             <div className="panel-actions panel-actions-in-head">
-              <span className="status-line">{rootBrowseLoading ? '目录加载中…' : '当前只看这个目录下的内容'}</span>
+              <span className="status-line">
+                {isSiemensDevice
+                  ? '支持示例：DB1.DBX0.0 / DB1.DBW2 / DB1.DBD4 / M0.0'
+                  : (rootBrowseLoading ? '目录加载中…' : '当前只看这个目录下的内容')}
+              </span>
               <button type="button" className="primary-action" onClick={addSelectionToBatch}>
                 加入批量配置
               </button>
@@ -2488,6 +2928,8 @@ function App() {
           <div className="tree-shell">
             {!activeDeviceId ? (
               <div className="empty-note">请先选择设备</div>
+            ) : isSiemensDevice ? (
+              <div className="empty-note">S7 绝对地址模式：点击“手动新增地址”，在批量配置中直接填写 NodeId。</div>
             ) : rootBrowseLoading && rootBrowseNodes.length === 0 ? (
               <div className="empty-note">目录加载中…</div>
             ) : hasLoadedRootBrowse && rootBrowseNodes.length === 0 ? (
@@ -2524,7 +2966,7 @@ function App() {
             <div className="table-shell batch-shell batch-inline-shell">
               <div className="table-scroll">
                 {batchRows.length === 0 ? (
-                  <div className="empty-note batch-empty-note">先从目录树勾选变量，或载入当前设备已订阅变量。</div>
+                  <div className="empty-note batch-empty-note">{isSiemensDevice ? '可点击“手动新增地址”直接录入 NodeId，或载入当前设备已配置变量。' : '先从目录树勾选变量，或载入当前设备已订阅变量。'}</div>
                 ) : (
                   <table className="runtime-table batch-table">
                     <colgroup>
@@ -2649,7 +3091,7 @@ function App() {
             allTags={runtime.tags}
             snapshots={snapshotByTagId}
 
-            onWrite={(tagId, value) => handleWrite(tagId, value, { successMessage: null })}
+            onWrite={(tagId, value) => handleWrite(tagId, value, { successMessage: null, refreshRuntime: false })}
 
             savingTagId={savingTagId}
             savedRecipes={djRecipeFiles}
@@ -2669,7 +3111,7 @@ function App() {
             allTags={runtime.tags}
             snapshots={snapshotByTagId}
 
-            onWrite={(tagId, value) => handleWrite(tagId, value, { successMessage: null })}
+            onWrite={(tagId, value) => handleWrite(tagId, value, { successMessage: null, refreshRuntime: false })}
             savingTagId={savingTagId}
             savedRecipes={qyjRecipeFiles}
 
@@ -2865,7 +3307,7 @@ function App() {
   if (view === 'efficiency') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{efficiencyPage}</main></div>
   if (view === 'fault') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{faultPage}</main></div>
   if (view === 'production') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{productionPage}</main></div>
-  if (view === 'runtime') return isAuthenticated ? runtimePage : <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{loginPage}</main></div>
+  if (view === 'runtime') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? runtimePage : loginPage}</main></div>
 
   if (view === 'tags') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? tagsPage : loginPage}</main></div>
   if (view === 'reportConfig') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? reportConfigPage : loginPage}</main></div>

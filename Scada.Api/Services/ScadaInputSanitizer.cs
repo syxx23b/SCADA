@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Scada.Api.Domain;
 using Scada.Api.Dtos;
 
 namespace Scada.Api.Services;
@@ -19,6 +20,9 @@ public static class ScadaInputSanitizer
     {
         var name = request.Name.Trim();
         var endpointUrl = request.EndpointUrl.Trim();
+        var driverKind = string.Equals(request.DriverKind?.Trim(), "SiemensS7", StringComparison.OrdinalIgnoreCase)
+            ? DeviceDriverKind.SiemensS7
+            : DeviceDriverKind.OpcUa;
         var securityMode = string.IsNullOrWhiteSpace(request.SecurityMode) ? "None" : request.SecurityMode.Trim();
         var securityPolicy = string.IsNullOrWhiteSpace(request.SecurityPolicy) ? "None" : request.SecurityPolicy.Trim();
         var authMode = string.Equals(request.AuthMode?.Trim(), "UsernamePassword", StringComparison.OrdinalIgnoreCase)
@@ -43,6 +47,7 @@ public static class ScadaInputSanitizer
 
         return new SanitizedDevicePayload(
             name,
+            driverKind,
             endpointUrl,
             securityMode,
             securityPolicy,
@@ -287,6 +292,7 @@ public static class ScadaInputSanitizer
 
 public sealed record SanitizedDevicePayload(
     string Name,
+    DeviceDriverKind DriverKind,
     string EndpointUrl,
     string SecurityMode,
     string SecurityPolicy,

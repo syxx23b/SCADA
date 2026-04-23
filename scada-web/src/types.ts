@@ -1,6 +1,7 @@
 export interface DeviceConnection {
   id: string
   name: string
+  driverKind: string
   endpointUrl: string
   securityMode: string
   securityPolicy: string
@@ -14,6 +15,7 @@ export interface DeviceConnection {
 export interface DeviceFormState {
   id?: string
   name: string
+  driverKind: string
   endpointUrl: string
   securityMode: string
   securityPolicy: string
@@ -62,6 +64,22 @@ export interface BrowseNode {
   writable: boolean
 }
 
+export interface SiemensDbImportTag {
+  nodeId: string
+  browseName: string
+  displayName: string
+  dataType: string
+  groupKey: string
+  allowWrite: boolean
+}
+
+export interface SiemensDbImportPreview {
+  blockName: string
+  total: number
+  tags: SiemensDbImportTag[]
+  warnings: string[]
+}
+
 export interface TagSnapshot {
   tagId: string
   deviceId: string
@@ -85,6 +103,13 @@ export interface RuntimeOverview {
   devices: RuntimeDevice[]
   tags: TagDefinition[]
   snapshots: TagSnapshot[]
+}
+
+export interface TagExcelReplaceResult {
+  total: number
+  created: number
+  removed: number
+  errors: string[]
 }
 
 export interface EfficiencyTimelineSegment {

@@ -1,4 +1,5 @@
 using Scada.Api.Dtos;
+using Scada.Api.Domain;
 using Scada.Api.Services;
 
 namespace Scada.Api.Tests.Services;
@@ -10,6 +11,7 @@ public sealed class ScadaInputSanitizerTests
     {
         var request = new UpsertDeviceRequest(
             " Line 1 ",
+            null,
             " opc.tcp://127.0.0.1:4840 ",
             null,
             null,
@@ -32,6 +34,7 @@ public sealed class ScadaInputSanitizerTests
     {
         var request = new UpsertDeviceRequest(
             "Mixer",
+            null,
             "opc.tcp://10.0.0.2:4840",
             "Sign",
             "Basic256Sha256",
@@ -45,6 +48,26 @@ public sealed class ScadaInputSanitizerTests
         Assert.Equal("UsernamePassword", result.AuthMode);
         Assert.Equal("engineer", result.Username);
         Assert.Equal("secret", result.Password);
+    }
+
+    [Fact]
+    public void NormalizeDevice_ForSiemensS7Input_UsesSiemensDriverKind()
+    {
+        var request = new UpsertDeviceRequest(
+            "S7 PLC",
+            "SiemensS7",
+            "192.168.0.10",
+            null,
+            null,
+            "UsernamePassword",
+            "admin",
+            "secret",
+            true);
+
+        var result = ScadaInputSanitizer.NormalizeDevice(request);
+
+        Assert.Equal(DeviceDriverKind.SiemensS7, result.DriverKind);
+        Assert.Equal("admin", result.Username);
     }
 
     [Fact]

@@ -93,9 +93,15 @@
 
 /* 反馈消息框 */
 .recipe-feedback {
-  width: 100%;
-  max-width: min(1240px, calc(100vw - 64px));
-  margin: 0 auto;
+  position: fixed;
+  top: 84px;
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: min(760px, calc(100vw - 40px));
+  max-height: min(58vh, 560px);
+  overflow: auto;
+  margin: 0;
   padding: 10px 16px;
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #ffffff;
@@ -105,6 +111,53 @@
   text-align: center;
   box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
   animation: recipeFeedbackIn 0.3s ease;
+  z-index: 1500;
+}
+
+.recipe-feedback-warning {
+  background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+  box-shadow: 0 4px 12px rgba(180, 83, 9, 0.35);
+}
+
+.recipe-feedback-error {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  box-shadow: 0 4px 12px rgba(185, 28, 28, 0.35);
+}
+
+.recipe-feedback-message {
+  margin-bottom: 8px;
+}
+
+.recipe-feedback-issues {
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.recipe-feedback-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.recipe-feedback-table th,
+.recipe-feedback-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+  white-space: nowrap;
+}
+
+.recipe-feedback-table td {
+  font-weight: 500;
+}
+
+.recipe-feedback-truncated {
+  padding: 6px 8px 8px;
+  font-size: 12px;
+  opacity: 0.9;
 }
 
 @keyframes recipeFeedbackIn {

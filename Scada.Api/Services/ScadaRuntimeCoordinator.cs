@@ -4,9 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Scada.Api.Data;
 using Scada.Api.Domain;
 using Scada.Api.Dtos;
-using Scada.OpcUa.Abstractions;
-using Scada.OpcUa.Models;
-
 namespace Scada.Api.Services;
 
 public interface IScadaRuntimeCoordinator
@@ -23,14 +20,14 @@ public interface IScadaRuntimeCoordinator
 
     Task RefreshSubscriptionsAsync(DeviceConnectionEntity device, IReadOnlyCollection<TagDefinitionEntity> tags, CancellationToken cancellationToken);
 
-    Task<OpcUaWriteResult> WriteAsync(DeviceConnectionEntity device, TagDefinitionEntity tag, JsonElement value, CancellationToken cancellationToken);
+    Task<DeviceWriteResult> WriteAsync(DeviceConnectionEntity device, TagDefinitionEntity tag, JsonElement value, CancellationToken cancellationToken);
 
     Task<RuntimeOverviewDto> GetRuntimeOverviewAsync(CancellationToken cancellationToken);
 }
 
 public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
 {
-    private readonly IOpcUaSessionClientFactory _clientFactory;
+    private readonly IDeviceSessionClientFactory _clientFactory;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly TagSnapshotCache _snapshotCache;
     private readonly RealtimeNotifier _realtimeNotifier;
@@ -38,7 +35,7 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
     private readonly ConcurrentDictionary<Guid, DeviceRuntimeContext> _contexts = new();
 
     public ScadaRuntimeCoordinator(
-        IOpcUaSessionClientFactory clientFactory,
+        IDeviceSessionClientFactory clientFactory,
         IServiceScopeFactory scopeFactory,
         TagSnapshotCache snapshotCache,
         RealtimeNotifier realtimeNotifier,
@@ -59,7 +56,7 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
     public bool IsConnectionHealthy(Guid deviceId)
     {
         return _contexts.TryGetValue(deviceId, out var context) &&
-               context.Client.State is OpcUaConnectionState.Connected or OpcUaConnectionState.Connecting or OpcUaConnectionState.Reconnecting;
+               context.Client.State is DeviceConnectionState.Connected or DeviceConnectionState.Connecting or DeviceConnectionState.Reconnecting;
     }
 
     public async Task ConnectAsync(DeviceConnectionEntity device, IReadOnlyCollection<TagDefinitionEntity> tags, CancellationToken cancellationToken)
@@ -67,7 +64,7 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
         EnsureLocalSnapshots(tags);
 
         if (_contexts.TryGetValue(device.Id, out var existingContext) &&
-            existingContext.Client.State is OpcUaConnectionState.Connected or OpcUaConnectionState.Connecting or OpcUaConnectionState.Reconnecting)
+            existingContext.Client.State is DeviceConnectionState.Connected or DeviceConnectionState.Connecting or DeviceConnectionState.Reconnecting)
         {
             await existingContext.Client.ApplySubscriptionsAsync(ToSubscriptions(tags), cancellationToken);
             return;
@@ -80,7 +77,7 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
             await previousContext.Client.DisposeAsync();
         }
 
-        var client = _clientFactory.Create();
+        var client = _clientFactory.Create(device.DriverKind);
         client.ValueChanged += OnValueChanged;
         client.ConnectionStateChanged += OnConnectionStateChanged;
 
@@ -144,7 +141,7 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
         await context.Client.ApplySubscriptionsAsync(ToSubscriptions(tags), cancellationToken);
     }
 
-    public async Task<OpcUaWriteResult> WriteAsync(DeviceConnectionEntity device, TagDefinitionEntity tag, JsonElement value, CancellationToken cancellationToken)
+    public async Task<DeviceWriteResult> WriteAsync(DeviceConnectionEntity device, TagDefinitionEntity tag, JsonElement value, CancellationToken cancellationToken)
     {
         if (IsLocalStaticTag(tag))
         {
@@ -170,11 +167,11 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
 
             _snapshotCache.Upsert(snapshot);
             _ = _realtimeNotifier.PublishSnapshotAsync(snapshot, CancellationToken.None);
-            return new OpcUaWriteResult(tag.Id, true, "Good", null);
+            return new DeviceWriteResult(tag.Id, true, "Good", null);
         }
 
         var context = await EnsureContextAsync(device, cancellationToken);
-        return await context.Client.WriteAsync(new OpcUaWriteRequest(tag.Id, tag.NodeId, tag.DataType, value), cancellationToken);
+        return await context.Client.WriteAsync(new DeviceWriteRequest(tag.Id, tag.NodeId, tag.DataType, value), cancellationToken);
     }
 
     public async Task<RuntimeOverviewDto> GetRuntimeOverviewAsync(CancellationToken cancellationToken)
@@ -221,10 +218,10 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
         return _contexts[device.Id];
     }
 
-    private static IReadOnlyCollection<OpcUaSubscriptionDefinition> ToSubscriptions(IEnumerable<TagDefinitionEntity> tags)
+    private static IReadOnlyCollection<DeviceSubscriptionDefinition> ToSubscriptions(IEnumerable<TagDefinitionEntity> tags)
     {
         return tags.Where(item => item.Enabled && !IsLocalStaticTag(item))
-            .Select(item => new OpcUaSubscriptionDefinition(
+            .Select(item => new DeviceSubscriptionDefinition(
                 item.Id,
                 item.NodeId,
                 item.DisplayName,
@@ -299,22 +296,23 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
     }
 
 
-    private static OpcUaConnectionOptions ToConnectionOptions(DeviceConnectionEntity device)
+    private static DeviceConnectionOptions ToConnectionOptions(DeviceConnectionEntity device)
     {
-        return new OpcUaConnectionOptions(
+        return new DeviceConnectionOptions(
             device.Id,
             device.Name,
+            device.DriverKind,
             device.EndpointUrl,
             device.SecurityMode,
             device.SecurityPolicy,
             device.AuthMode.Equals("UsernamePassword", StringComparison.OrdinalIgnoreCase)
-                ? OpcUaAuthenticationMode.UsernamePassword
-                : OpcUaAuthenticationMode.Anonymous,
+                ? DeviceAuthenticationMode.UsernamePassword
+                : DeviceAuthenticationMode.Anonymous,
             device.Username,
             device.Password);
     }
 
-    private void OnValueChanged(object? sender, OpcUaValueChange eventArgs)
+    private void OnValueChanged(object? sender, DeviceValueChange eventArgs)
     {
         var connectionState = _contexts.TryGetValue(eventArgs.DeviceId, out var context)
             ? context.Client.State.ToString()
@@ -333,7 +331,7 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
         _ = _realtimeNotifier.PublishSnapshotAsync(snapshot, CancellationToken.None);
     }
 
-    private void OnConnectionStateChanged(object? sender, OpcUaConnectionStateChanged eventArgs)
+    private void OnConnectionStateChanged(object? sender, DeviceConnectionStateChanged eventArgs)
     {
         _ = PersistDeviceStateAsync(eventArgs.DeviceId, MapState(eventArgs.State), eventArgs.Message, CancellationToken.None);
     }
@@ -356,17 +354,17 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
             cancellationToken);
     }
 
-    private static DeviceConnectionStatus MapState(OpcUaConnectionState state)
+    private static DeviceConnectionStatus MapState(DeviceConnectionState state)
     {
         return state switch
         {
-            OpcUaConnectionState.Connecting => DeviceConnectionStatus.Connecting,
-            OpcUaConnectionState.Connected => DeviceConnectionStatus.Connected,
-            OpcUaConnectionState.Reconnecting => DeviceConnectionStatus.Reconnecting,
-            OpcUaConnectionState.Faulted => DeviceConnectionStatus.Faulted,
+            DeviceConnectionState.Connecting => DeviceConnectionStatus.Connecting,
+            DeviceConnectionState.Connected => DeviceConnectionStatus.Connected,
+            DeviceConnectionState.Reconnecting => DeviceConnectionStatus.Reconnecting,
+            DeviceConnectionState.Faulted => DeviceConnectionStatus.Faulted,
             _ => DeviceConnectionStatus.Disconnected
         };
     }
 
-    private sealed record DeviceRuntimeContext(Guid DeviceId, string DeviceName, IOpcUaSessionClient Client);
+    private sealed record DeviceRuntimeContext(Guid DeviceId, string DeviceName, IDeviceSessionClient Client);
 }

@@ -37,6 +37,7 @@ public sealed class DevicesController : ControllerBase
         var entity = new DeviceConnectionEntity
         {
             Name = sanitized.Name,
+            DriverKind = sanitized.DriverKind,
             EndpointUrl = sanitized.EndpointUrl,
             SecurityMode = sanitized.SecurityMode,
             SecurityPolicy = sanitized.SecurityPolicy,
@@ -66,6 +67,7 @@ public sealed class DevicesController : ControllerBase
 
         var sanitized = ScadaInputSanitizer.NormalizeDevice(request);
         entity.Name = sanitized.Name;
+        entity.DriverKind = sanitized.DriverKind;
         entity.EndpointUrl = sanitized.EndpointUrl;
         entity.SecurityMode = sanitized.SecurityMode;
         entity.SecurityPolicy = sanitized.SecurityPolicy;
