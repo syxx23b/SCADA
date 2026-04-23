@@ -18,18 +18,19 @@ internal static class InstallerEngine
         }
 
         var installDir = Path.GetFullPath(options.InstallDirectory);
+        StopAndDeleteService(options, log);
+        DeleteDirectoryWithRetry(installDir, log);
         Directory.CreateDirectory(installDir);
 
         log($"开始复制文件到：{installDir}");
         CopyDirectory(payloadRoot, installDir);
 
-        StopAndDeleteService(options, log);
-
         var serviceExe = Path.Combine(installDir, "Scada.Api.exe");
         var binPath = $"\"{serviceExe}\" --urls http://0.0.0.0:{options.Port}";
 
         log($"正在注册服务：{options.ServiceName}");
-        RunProcess("sc.exe",
+        RunProcess(
+            "sc.exe",
             $"create {options.ServiceName} binPath= \"{binPath}\" start= auto DisplayName= \"{options.ServiceDisplayName}\" obj= LocalSystem",
             ignoreErrors: false,
             log);
@@ -95,6 +96,30 @@ internal static class InstallerEngine
             Directory.CreateDirectory(Path.GetDirectoryName(destinationFile)!);
             File.Copy(file, destinationFile, overwrite: true);
         }
+    }
+
+    private static void DeleteDirectoryWithRetry(string directory, Action<string> log)
+    {
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                log($"正在清理旧版本：{directory}");
+                Directory.Delete(directory, recursive: true);
+                return;
+            }
+            catch when (attempt < 5)
+            {
+                Thread.Sleep(1000);
+            }
+        }
+
+        Directory.Delete(directory, recursive: true);
     }
 
     private static void RunProcess(string fileName, string arguments, bool ignoreErrors, Action<string> log)

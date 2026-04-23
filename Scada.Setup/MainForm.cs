@@ -1,5 +1,3 @@
-using System.ComponentModel;
-
 namespace Scada.Setup;
 
 internal sealed class MainForm : Form
@@ -20,14 +18,15 @@ internal sealed class MainForm : Form
         MinimizeBox = false;
         MaximizeBox = false;
         FormBorderStyle = FormBorderStyle.FixedDialog;
-        ClientSize = new Size(760, 540);
+        ClientSize = new Size(820, 620);
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var header = new Panel
         {
             Dock = DockStyle.Top,
-            Height = 100,
-            BackColor = Color.FromArgb(36, 54, 86),
+            Height = 140,
+            BackColor = Color.FromArgb(32, 49, 80),
+            Padding = new Padding(24, 20, 24, 16),
         };
 
         var title = new Label
@@ -38,7 +37,6 @@ internal sealed class MainForm : Form
             Text = "松门电器 SCADA 服务安装程序",
             ForeColor = Color.White,
             Font = new Font("Microsoft YaHei UI", 16F, FontStyle.Bold),
-            Padding = new Padding(24, 20, 24, 0),
         };
 
         var branding = new Label
@@ -47,19 +45,18 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Top,
             Height = 28,
             Text = "开发：ZhangXC    公司：松门电器",
-            ForeColor = Color.FromArgb(220, 230, 255),
-            Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Regular),
-            Padding = new Padding(24, 0, 24, 0),
+            ForeColor = Color.FromArgb(224, 233, 255),
+            Font = new Font("Microsoft YaHei UI", 10F),
         };
 
         var tip = new Label
         {
             AutoSize = false,
             Dock = DockStyle.Fill,
-            Text = "安装后将自动创建 Windows 服务，并设置为开机自启动。默认开放 TCP 5000 端口。",
-            ForeColor = Color.FromArgb(235, 240, 250),
-            Font = new Font("Microsoft YaHei UI", 9.25F),
-            Padding = new Padding(24, 0, 24, 16),
+            Text = "安装后将先清理旧版本，再创建 Windows 服务并设置为开机自启动。默认开放 TCP 5000 端口。",
+            ForeColor = Color.FromArgb(236, 242, 255),
+            Font = new Font("Microsoft YaHei UI", 9.5F),
+            Padding = new Padding(0, 8, 0, 0),
         };
 
         header.Controls.Add(tip);
@@ -70,7 +67,7 @@ internal sealed class MainForm : Form
         var layout = new TableLayoutPanel
         {
             Dock = DockStyle.Top,
-            Location = new Point(0, 100),
+            Location = new Point(0, 140),
             Padding = new Padding(24, 20, 24, 0),
             ColumnCount = 3,
             RowCount = 4,
@@ -79,6 +76,10 @@ internal sealed class MainForm : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38));
 
         layout.Controls.Add(MakeLabel("安装目录"), 0, 0);
         _installPathTextBox = MakeTextBox(InstallerOptions.Default.InstallDirectory);
@@ -113,7 +114,7 @@ internal sealed class MainForm : Form
         var buttonPanel = new FlowLayoutPanel
         {
             Dock = DockStyle.Top,
-            Height = 56,
+            Height = 58,
             FlowDirection = FlowDirection.RightToLeft,
             Padding = new Padding(24, 12, 24, 0),
         };
