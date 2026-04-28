@@ -107,7 +107,10 @@ app.MapGet("/help/manual", () =>
 app.MapHub<RealtimeHub>("/hubs/realtime");
 app.MapFallbackToFile("index.html");
 
-await EnsureReportProxyAuthenticatedAsync(app.Services);
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    _ = Task.Run(() => EnsureReportProxyAuthenticatedAsync(app.Services));
+});
 
 app.Run();
 

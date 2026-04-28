@@ -11,7 +11,17 @@ import type {
   TagDefinition,
   TagFormState,
   ProductionByGwResponse,
-  FaultByGwResponse
+  FaultByGwResponse,
+  ReworkLookupResponse,
+  ReworkHistoryResponse,
+  RepairRecordConfirmRequest,
+  RepairRecordConfirmResponse,
+  RepairRecordDailyResponse,
+  RepairRecordListResponse,
+  ReworkConfigGraphResponse,
+  ReworkConfigEntriesResponse,
+  ReworkMeasureNode,
+  ReworkMappingEdge,
 } from './types'
 
 
@@ -215,6 +225,76 @@ export function getProductionTodayByGw() {
 
 export function getFaultTodayByGw() {
   return request<FaultByGwResponse>('/api/production/fault-today-gw')
+}
+
+export function getLatestReworkByTm(tm: string) {
+  return request<ReworkLookupResponse>(`/api/production/rework-latest?tm=${encodeURIComponent(tm)}`)
+}
+
+export function getReworkHistoryByTm(tm: string) {
+  return request<ReworkHistoryResponse>(`/api/production/rework-history?tm=${encodeURIComponent(tm)}`)
+}
+
+export function confirmRepairRecord(payload: RepairRecordConfirmRequest) {
+  return request<RepairRecordConfirmResponse>('/api/production/repair-records/confirm', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getRepairRecords(from: string, to: string) {
+  return request<RepairRecordListResponse>(`/api/production/repair-records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+}
+
+export function getRepairRecordDaily(months = 12) {
+  return request<RepairRecordDailyResponse>(`/api/production/repair-records/daily?months=${months}`)
+}
+
+export function getReworkConfigGraph() {
+  return request<ReworkConfigGraphResponse>('/api/rework-config/graph')
+}
+
+export function getReworkConfigEntries(err: number) {
+  return request<ReworkConfigEntriesResponse>(`/api/rework-config/entries/${encodeURIComponent(String(err))}`)
+}
+
+export function createReworkSuggestion(err: number, itemContent: string) {
+  return request('/api/rework-config/suggestions', {
+    method: 'POST',
+    body: JSON.stringify({ err, itemContent }),
+  })
+}
+
+export function deleteReworkSuggestion(id: number) {
+  return request<void>(`/api/rework-config/suggestions/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function createReworkMeasure(itemContent: string) {
+  return request<ReworkMeasureNode>('/api/rework-config/measures', {
+    method: 'POST',
+    body: JSON.stringify({ itemContent }),
+  })
+}
+
+export function deleteReworkMeasure(id: number) {
+  return request<void>(`/api/rework-config/measures/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function createReworkMapping(err: number, knowledgeId: number) {
+  return request<ReworkMappingEdge>('/api/rework-config/mappings', {
+    method: 'POST',
+    body: JSON.stringify({ err, knowledgeId }),
+  })
+}
+
+export function deleteReworkMapping(id: number) {
+  return request<void>(`/api/rework-config/mappings/${id}`, {
+    method: 'DELETE',
+  })
 }
 
 

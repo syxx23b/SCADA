@@ -177,14 +177,129 @@ export interface FaultByGwResponse {
   totalQualifiedCount: number
   faultBuckets: ProductionByGwBucket[]
   qualifiedBuckets: ProductionByGwBucket[]
+  quarterErrorDefinitions: FaultErrorDefinition[]
   quarterErrorDetails: FaultQuarterBucket[]
   quarterQualifiedDetails: ProductionByDateBucket[]
   generatedAt: string
 }
 
+export interface FaultErrorDefinition {
+  err: number
+  information: string
+}
 
 export interface FaultQuarterBucket {
   date: string
   err: number
   count: number
+}
+
+export interface ReworkLookupResponse {
+  tm: string
+  found: boolean
+  sj: string | null
+  gw: number | null
+  orderNo: string | null
+  err: number | null
+  errInformation: string | null
+  reworkSuggestions: string[]
+  repairMeasures: string[]
+}
+
+export interface ReworkHistoryErrorItem {
+  sj: string | null
+  gw: number | null
+  orderNo: string | null
+  err: number | null
+  errInformation: string | null
+}
+
+export interface ReworkHistoryRepairItem {
+  confirmedAt: string
+  repairMeasure: string
+}
+
+export interface ReworkHistoryResponse {
+  tm: string
+  errorItems: ReworkHistoryErrorItem[]
+  repairItems: ReworkHistoryRepairItem[]
+}
+
+export interface RepairRecordConfirmRequest {
+  tm: string | null
+  sj: string | null
+  gw: number | null
+  orderNo: string | null
+  err: number | null
+  repairMeasure: string
+}
+
+export interface RepairRecordConfirmResponse {
+  id: number
+  confirmedAt: string
+}
+
+export interface RepairRecordItem {
+  id: number
+  sj: string
+  tm: string
+  err: number
+  errInformation: string
+  repairMeasure: string
+  gw: number | null
+  orderNo: string | null
+  confirmedAt: string
+}
+
+export interface RepairRecordListResponse {
+  from: string
+  to: string
+  items: RepairRecordItem[]
+}
+
+export interface RepairRecordDailyResponse {
+  from: string
+  to: string
+  months: number
+  daily: ProductionByDateBucket[]
+}
+
+export interface ReworkErrNode {
+  err: number
+  errInformation: string
+}
+
+export interface ReworkMeasureNode {
+  id: number
+  itemContent: string
+}
+
+export interface ReworkMappingEdge {
+  id: number
+  err: number
+  knowledgeId: number
+}
+
+export interface ReworkConfigGraphResponse {
+  errNodes: ReworkErrNode[]
+  measureNodes: ReworkMeasureNode[]
+  edges: ReworkMappingEdge[]
+}
+
+export interface ReworkSuggestionRow {
+  id: number
+  itemContent: string
+}
+
+export interface ReworkMeasureMappingRow {
+  mappingId: number
+  knowledgeId: number
+  itemContent: string
+}
+
+export interface ReworkConfigEntriesResponse {
+  err: number
+  suggestions: ReworkSuggestionRow[]
+  measures: ReworkMeasureMappingRow[]
+  measureCatalog: ReworkMeasureNode[]
 }

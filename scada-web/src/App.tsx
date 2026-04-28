@@ -3,12 +3,15 @@
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, connectDevice, createDevice, createTag, deleteTag, disconnectDevice, exportAllTagsExcel, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, getFaultTodayByGw, importTagsExcelReplace, openVncTool, updateDevice, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+import { browseDevice, connectDevice, createDevice, createTag, deleteTag, disconnectDevice, exportAllTagsExcel, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, getFaultTodayByGw, getLatestReworkByTm, getRepairRecordDaily, getRepairRecords, getReworkHistoryByTm, importTagsExcelReplace, openVncTool, updateDevice, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
 
-import type { BrowseNode, DeviceConnection, DeviceFormState, EfficiencyTimelineResponse, FaultByGwResponse, ProductionByGwResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
+import type { BrowseNode, DeviceConnection, DeviceFormState, EfficiencyTimelineResponse, FaultByGwResponse, ProductionByGwResponse, RepairRecordDailyResponse, RepairRecordListResponse, ReworkHistoryResponse, ReworkLookupResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
 import { EfficiencyAnalysis } from './components/EfficiencyAnalysis'
 import { FaultAnalysis } from './components/FaultAnalysis'
 import { ProductionStatistics } from './components/ProductionStatistics'
+import { ReworkManagement } from './components/ReworkManagement'
+import { ReworkConfig } from './components/ReworkConfig'
+import { ReworkRecords } from './components/ReworkRecords'
 import { RecipeDJ } from './components/RecipeDJ'
 import { RecipeQYJ } from './components/RecipeQYJ'
 
@@ -28,6 +31,9 @@ type ViewKey =
   | 'efficiency'
   | 'fault'
   | 'production'
+  | 'rework'
+  | 'reworkConfig'
+  | 'reworkRecords'
   | 'runtime'
   | 'tags'
   | 'recipeDj'
@@ -194,6 +200,9 @@ const baseSidebarItems: SidebarItem[] = [
   { key: 'efficiency', label: '效率分析', icon: <EfficiencySidebarIcon /> },
   { key: 'fault', label: '故障分析', icon: <FaultSidebarIcon /> },
   { key: 'production', label: '产量统计', icon: <ProductionSidebarIcon /> },
+  { key: 'rework', label: '返修管理', icon: <ProductionSidebarIcon /> },
+  { key: 'reworkConfig', label: '返修组态', icon: <ProductionSidebarIcon /> },
+  { key: 'reworkRecords', label: '返修记录', icon: <ProductionSidebarIcon /> },
   { key: 'recipeDj', label: '配方-电机泵', icon: <DownloadSidebarIcon /> },
   { key: 'recipeQyj', label: '配方-汽油机', icon: <DownloadSidebarIcon /> },
   { key: 'help', label: '帮助', icon: '？' },
@@ -237,7 +246,7 @@ const DASHBOARD_TEMPLATE_FIELDS = [
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'batch') return 'tags'
-  return value === 'dashboard' || value === 'factoryReportDj' || value === 'factoryReportMotor' || value === 'factoryReportQyj' || value === 'factoryReportEngine' || value === 'enduranceReportDj' || value === 'enduranceReportMotor' || value === 'enduranceReportQyj' || value === 'enduranceReportEngine' || value === 'efficiency' || value === 'fault' || value === 'production' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'reportConfig' || value === 'help' || value === 'login' ? value : 'dashboard'
+  return value === 'dashboard' || value === 'factoryReportDj' || value === 'factoryReportMotor' || value === 'factoryReportQyj' || value === 'factoryReportEngine' || value === 'enduranceReportDj' || value === 'enduranceReportMotor' || value === 'enduranceReportQyj' || value === 'enduranceReportEngine' || value === 'efficiency' || value === 'fault' || value === 'production' || value === 'rework' || value === 'reworkConfig' || value === 'reworkRecords' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'reportConfig' || value === 'help' || value === 'login' ? value : 'dashboard'
 }
 
 const FACTORY_REPORT_PARAMS = 'ref_t=design&ref_c=5d7ff465-26b4-4e0c-baca-346f29bfb3c7'
@@ -246,6 +255,7 @@ const FACTORY_REPORT_CN_PATH = 'QYJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B
 const REPORT_VISIBILITY_STORAGE_KEY = 'scada-web.report-visibility'
 type FactoryReportKey = 'factoryReportDj' | 'factoryReportMotor' | 'factoryReportQyj' | 'factoryReportEngine'
 type ReportKey = FactoryReportKey | 'enduranceReportDj' | 'enduranceReportMotor' | 'enduranceReportQyj' | 'enduranceReportEngine'
+type ReworkServiceKey = 'rework' | 'reworkConfig' | 'reworkRecords'
 const REPORT_SERVICE_KEYS: ReportKey[] = [
   'factoryReportDj',
   'factoryReportMotor',
@@ -256,6 +266,9 @@ const REPORT_SERVICE_KEYS: ReportKey[] = [
   'enduranceReportQyj',
   'enduranceReportEngine',
 ]
+const REWORK_SERVICE_KEYS: ReworkServiceKey[] = ['rework', 'reworkConfig', 'reworkRecords']
+const MENU_VISIBILITY_KEYS = [...REPORT_SERVICE_KEYS, ...REWORK_SERVICE_KEYS] as const
+type MenuVisibilityKey = (typeof MENU_VISIBILITY_KEYS)[number]
 
 const REPORTS: Record<ReportKey, { title: string; subtitle: string; iframeUrl: string; openUrl: string }> = {
   factoryReportDj: {
@@ -830,20 +843,20 @@ function App() {
   const [loginUsername, setLoginUsername] = useState('')
   const [loginPassword, setLoginPassword] = useState('')
   const previousViewRef = useRef<ViewKey>(view)
-  const [reportVisibility, setReportVisibility] = useState<Record<ReportKey, boolean>>(() => {
-    const fallback = REPORT_SERVICE_KEYS.reduce((acc, key) => {
+  const [reportVisibility, setReportVisibility] = useState<Record<MenuVisibilityKey, boolean>>(() => {
+    const fallback = MENU_VISIBILITY_KEYS.reduce((acc, key) => {
       acc[key] = true
       return acc
-    }, {} as Record<ReportKey, boolean>)
+    }, {} as Record<MenuVisibilityKey, boolean>)
 
     try {
       const raw = window.localStorage.getItem(REPORT_VISIBILITY_STORAGE_KEY)
       if (!raw) return fallback
-      const parsed = JSON.parse(raw) as Partial<Record<ReportKey, boolean>>
-      return REPORT_SERVICE_KEYS.reduce((acc, key) => {
+      const parsed = JSON.parse(raw) as Partial<Record<MenuVisibilityKey, boolean>>
+      return MENU_VISIBILITY_KEYS.reduce((acc, key) => {
         acc[key] = parsed[key] ?? true
         return acc
-      }, {} as Record<ReportKey, boolean>)
+      }, {} as Record<MenuVisibilityKey, boolean>)
     } catch {
       return fallback
     }
@@ -1053,6 +1066,26 @@ function App() {
         setFaultLoading(false)
       }
     }
+  }, [])
+
+  const handleLookupRework = useCallback(async (tm: string): Promise<ReworkLookupResponse> => {
+    const response = await getLatestReworkByTm(tm)
+    setStatusMessage(response.found ? '返修记录查询完成' : '未找到匹配的返修记录')
+    return response
+  }, [])
+
+  const handleLoadReworkHistory = useCallback(async (tm: string): Promise<ReworkHistoryResponse> => {
+    return getReworkHistoryByTm(tm)
+  }, [])
+
+  const handleQueryRepairRecords = useCallback(async (from: string, to: string): Promise<RepairRecordListResponse> => {
+    const response = await getRepairRecords(from, to)
+    setStatusMessage(`返修记录查询完成：${response.items.length} 条`)
+    return response
+  }, [])
+
+  const handleQueryRepairDaily = useCallback(async (months = 12): Promise<RepairRecordDailyResponse> => {
+    return getRepairRecordDaily(months)
   }, [])
 
   // 处理保存DJ配方
@@ -1283,17 +1316,22 @@ function App() {
 
   const sidebarItems = useMemo(() => {
     const visibleBaseSidebarItems = baseSidebarItems.filter((item) => {
-      if (!REPORT_SERVICE_KEYS.includes(item.key as ReportKey)) return true
-      return reportVisibility[item.key as ReportKey] ?? true
+      if (!MENU_VISIBILITY_KEYS.includes(item.key as MenuVisibilityKey)) return true
+      return reportVisibility[item.key as MenuVisibilityKey] ?? true
     })
     return isAuthenticated ? [...visibleBaseSidebarItems, ...protectedSidebarItems] : visibleBaseSidebarItems
   }, [isAuthenticated, reportVisibility])
-  const reportConfigItems = REPORT_SERVICE_KEYS.map((key) => ({
-    key,
-    title: REPORTS[key].title,
-    subtitle: REPORTS[key].subtitle,
-    visible: reportVisibility[key],
-  }))
+  const reportConfigItems = [
+    ...REPORT_SERVICE_KEYS.map((key) => ({
+      key,
+      title: REPORTS[key].title,
+      subtitle: REPORTS[key].subtitle,
+      visible: reportVisibility[key],
+    })),
+    { key: 'rework' as const, title: '返修管理', subtitle: '返修服务页面入口', visible: reportVisibility.rework },
+    { key: 'reworkConfig' as const, title: '返修组态', subtitle: '返修服务页面入口', visible: reportVisibility.reworkConfig },
+    { key: 'reworkRecords' as const, title: '返修记录', subtitle: '返修服务页面入口', visible: reportVisibility.reworkRecords },
+  ]
   const groups = useMemo(() => {
     const values = runtime.tags.map((tag) => getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag))
     return sortGroupOptions(values)
@@ -1902,7 +1940,7 @@ function App() {
   }, [reportVisibility])
   useEffect(() => {
     const currentReportKey = view as ReportKey
-    if (!REPORT_SERVICE_KEYS.includes(currentReportKey)) return
+    if (!MENU_VISIBILITY_KEYS.includes(currentReportKey as MenuVisibilityKey)) return
     if (reportVisibility[currentReportKey] !== false) return
     setView('dashboard')
     setStatusMessage('当前报表已在报表配置中隐藏')
@@ -2191,6 +2229,7 @@ function App() {
     const hasRuntimeEntry = sidebarItems.some((item) => item.key === 'runtime')
     const isNavigationLocked = isSidebarCollapsed
     const firstVisibleReportKey = sidebarItems.find((item) => REPORT_SERVICE_KEYS.includes(item.key as ReportKey))?.key
+    const firstVisibleReworkKey = sidebarItems.find((item) => REWORK_SERVICE_KEYS.includes(item.key as ReworkServiceKey))?.key
 
     const rendered = sidebarItems.flatMap((item) => {
       const itemClass = isRuntime ? (view === item.key ? 'runtime-nav active' : 'runtime-nav') : (view === item.key ? 'nav-item active' : 'nav-item')
@@ -2199,6 +2238,8 @@ function App() {
       const itemTitle = isSidebarCollapsed ? item.label : undefined
       const shouldRenderReportServiceTitle = item.key === firstVisibleReportKey && !isSidebarCollapsed
       const shouldRenderReportGroupTail = item.key === 'production' && !isSidebarCollapsed
+      const shouldRenderReworkServiceTitle = item.key === firstVisibleReworkKey && !isSidebarCollapsed
+      const shouldRenderReworkGroupTail = item.key === 'reworkRecords' && !isSidebarCollapsed
 
       if (item.key === 'runtime') {
         return [
@@ -2238,7 +2279,17 @@ function App() {
           </div>,
         )
       }
-      const suffix = shouldRenderReportGroupTail ? [<div key={`report-group-tail-${mode}`} className="sidebar-divider" aria-hidden="true" />] : []
+      if (shouldRenderReworkServiceTitle) {
+        prefix.push(
+          <div key={`rework-service-title-${mode}`} className="sidebar-group-title">
+            返修服务
+          </div>,
+        )
+      }
+      const suffix = [
+        ...(shouldRenderReportGroupTail ? [<div key={`report-group-tail-${mode}`} className="sidebar-divider" aria-hidden="true" />] : []),
+        ...(shouldRenderReworkGroupTail ? [<div key={`rework-group-tail-${mode}`} className="sidebar-divider" aria-hidden="true" />] : []),
+      ]
 
       return [
         ...prefix,
@@ -2799,6 +2850,27 @@ function App() {
     </>
   )
 
+  const reworkPage = (
+    <>
+      <ReworkManagement onSearch={handleLookupRework} onLoadHistory={handleLoadReworkHistory} />
+      <div className="toast-line">{statusMessage}</div>
+    </>
+  )
+
+  const reworkConfigPage = (
+    <>
+      <ReworkConfig onStatus={showStatus} />
+      <div className="toast-line">{statusMessage}</div>
+    </>
+  )
+
+  const reworkRecordsPage = (
+    <>
+      <ReworkRecords onSearch={handleQueryRepairRecords} onLoadDaily={handleQueryRepairDaily} />
+      <div className="toast-line">{statusMessage}</div>
+    </>
+  )
+
   const faultPage = (
     <>
       <FaultAnalysis
@@ -3146,15 +3218,15 @@ function App() {
     </section>
   )
 
-  function setReportServiceVisible(key: ReportKey, visible: boolean) {
+  function setReportServiceVisible(key: MenuVisibilityKey, visible: boolean) {
     setReportVisibility((current) => ({ ...current, [key]: visible }))
   }
 
   function resetReportServiceVisibility() {
-    setReportVisibility(() => REPORT_SERVICE_KEYS.reduce((acc, key) => {
+    setReportVisibility(() => MENU_VISIBILITY_KEYS.reduce((acc, key) => {
       acc[key] = true
       return acc
-    }, {} as Record<ReportKey, boolean>))
+    }, {} as Record<MenuVisibilityKey, boolean>))
   }
 
   const reportConfigPage = (
@@ -3321,6 +3393,9 @@ function App() {
   if (view === 'efficiency') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{efficiencyPage}</main></div>
   if (view === 'fault') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{faultPage}</main></div>
   if (view === 'production') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{productionPage}</main></div>
+  if (view === 'rework') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{reworkPage}</main></div>
+  if (view === 'reworkConfig') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{reworkConfigPage}</main></div>
+  if (view === 'reworkRecords') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{reworkRecordsPage}</main></div>
   if (view === 'runtime') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? runtimePage : loginPage}</main></div>
 
   if (view === 'tags') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? tagsPage : loginPage}</main></div>

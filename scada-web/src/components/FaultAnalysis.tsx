@@ -3,44 +3,6 @@ import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 import type { FaultByGwResponse } from '../types'
 
-function errCodeToLabel(errCode: number) {
-  const dictionary: Record<number, string> = {
-    1: '不通电',
-    2: '低压启动失败',
-    3: '工作电流低',
-    4: '工作电流高',
-    5: '工作压力低',
-    6: '工作压力高',
-    7: '工作流量低',
-    8: '工作流量高',
-    9: '保压压力低',
-    10: '保压压力高',
-    11: '反冲压力低',
-    12: '反冲压力高',
-    13: '保压电流低',
-    14: '保压电流高',
-    15: '关枪不停机',
-    16: '吸液不合格',
-    17: '不保压',
-    18: '进水压力低',
-    19: '工压不稳',
-    21: '泵盖渗漏',
-    22: '泵体渗漏',
-    23: '油缸渗漏',
-    24: '电机异常',
-    25: '进水端异常',
-    26: '出水口异常',
-    27: '高压管漏水',
-    28: '外观异常',
-    29: '高压O形圈异常',
-    30: '其他异常',
-    50: '开枪跳动',
-    51: '关枪跳动',
-  }
-
-  return dictionary[errCode] ?? `代码${errCode}`
-}
-
 function formatDateTime(value: string) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return '-'
@@ -64,13 +26,15 @@ export function FaultAnalysis({
 
   const faultBuckets = data?.faultBuckets ?? []
   const qualifiedBuckets = data?.qualifiedBuckets ?? []
+  const quarterErrorDefinitions = data?.quarterErrorDefinitions ?? []
   const quarterErrorDetails = data?.quarterErrorDetails ?? []
   const quarterQualifiedDetails = data?.quarterQualifiedDetails ?? []
-  const quarterErrCodes = Array.from(new Set(quarterErrorDetails.map((item) => item.err))).sort((a, b) => {
-    if (a === 30) return 1
-    if (b === 30) return -1
-    return a - b
-  })
+  const quarterErrCodes = quarterErrorDefinitions.length > 0
+    ? quarterErrorDefinitions.map((item) => item.err)
+    : Array.from(new Set(quarterErrorDetails.map((item) => item.err))).sort((a, b) => a - b)
+  const quarterErrorLabelMap = new Map<number, string>(
+    quarterErrorDefinitions.map((item) => [item.err, item.information]),
+  )
   const quarterDates = Array.from(new Set([
     ...quarterErrorDetails.map((item) => item.date),
     ...quarterQualifiedDetails.map((item) => item.date),
@@ -187,9 +151,9 @@ export function FaultAnalysis({
               <span className="fault-legend-item"><i className="fault-legend-dot fault-legend-dot-qualified" />合格</span>
               <span className="fault-legend-item"><i className="fault-legend-dot fault-legend-dot-fault" />故障</span>
             </div>
-            <div className="production-chart production-chart-vertical" role="img" aria-label="按工位分组的故障数量棒图">
+            <div className="production-chart production-chart-vertical" role="img" aria-label="按工位分组的故障数量柱状图">
               {rows.length === 0 ? (
-                <div className="production-empty-inline">今日暂无 gw{'>'}0 且 error{'>'}0 的数据</div>
+                <div className="production-empty-inline">今日暂无 `gw &gt; 0` 且 `ERR &gt; 0` 的数据</div>
               ) : (
                 rows.map((item) => {
                   const qualifiedHeight = maxTotal > 0 ? Math.max(item.qualified > 0 ? 8 : 0, (item.qualified / maxTotal) * 100) : 0
@@ -234,7 +198,7 @@ export function FaultAnalysis({
                 </button>
               </div>
               <div className="production-table-subtitle">
-                故障统计仅供参考,数值为测试过程中采集到的报警数目,不等于故障产品数量
+                故障统计仅供参考，数值为测试过程中采集到的报警数量，不等于故障产品数量。
               </div>
             </div>
             <div className="production-table-wrap" ref={quarterExportRef}>
@@ -246,7 +210,9 @@ export function FaultAnalysis({
                     <tr>
                       <th>日期</th>
                       {quarterErrCodes.map((err) => (
-                        <th key={`err-h-${err}`} title={`ERR${err} ${errCodeToLabel(err)}`}>{errCodeToLabel(err)}</th>
+                        <th key={`err-h-${err}`} title={`ERR${err} ${quarterErrorLabelMap.get(err) ?? `ERR${err}`}`}>
+                          {quarterErrorLabelMap.get(err) ?? `ERR${err}`}
+                        </th>
                       ))}
                       <th>故障总数</th>
                       <th>合格总数</th>
@@ -262,11 +228,11 @@ export function FaultAnalysis({
                             key={`err-cell-${row.date}-${err}`}
                             className={row.errCounts[index] === row.maxErrCount && row.maxErrCount > 0 ? 'fault-err-peak' : ''}
                           >
-                            {row.errCounts[index] === 0 ? "" : row.errCounts[index]}
+                            {row.errCounts[index] === 0 ? '' : row.errCounts[index]}
                           </td>
                         ))}
-                        <td>{row.faultTotal === 0 ? "" : row.faultTotal}</td>
-                        <td>{row.qualifiedTotal === 0 ? "" : row.qualifiedTotal}</td>
+                        <td>{row.faultTotal === 0 ? '' : row.faultTotal}</td>
+                        <td>{row.qualifiedTotal === 0 ? '' : row.qualifiedTotal}</td>
                         <td className={row.passRateClass}>{row.passRate}</td>
                       </tr>
                     ))}
