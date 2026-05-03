@@ -1287,8 +1287,9 @@
   position: relative !important;
   display: inline-flex !important;
   flex-direction: column !important;
-  align-items: flex-start !important;
-  gap: 10px !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 8px !important;
   max-width: 176px !important;
   min-height: 70px !important;
   font-size: 24px !important;
@@ -1296,26 +1297,11 @@
   white-space: normal !important;
 }
 
-.brand-mark::before,
-.runtime-brand-mark::before {
-  content: "" !important;
-  width: 40px !important;
-  height: 30px !important;
-  display: inline-block !important;
-  flex: 0 0 auto !important;
-  align-self: flex-start !important;
-  background:
-    linear-gradient(135deg, #ffffff 0 62%, transparent 62%) left center / 30px 30px no-repeat,
-    linear-gradient(135deg, #006aff 0 60%, transparent 60%) right top / 20px 20px no-repeat !important;
-  margin-right: 0 !important;
-}
-
-.brand-logo-text {
+.brand-logo-icon {
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
   display: block;
-  height: 30px;
-  line-height: 30px;
-  white-space: nowrap;
-  overflow: hidden;
 }
 
 .brand-animated-title {
@@ -2151,12 +2137,22 @@ body,
   opacity: 0 !important;
 }
 
-.sidebar.sidebar-collapsed .brand-logo-text,
-.runtime-sidebar.sidebar-collapsed .brand-logo-text,
 .sidebar.sidebar-collapsed .brand-animated-title,
 .runtime-sidebar.sidebar-collapsed .brand-animated-title {
   visibility: hidden !important;
   opacity: 0 !important;
+}
+
+.sidebar.sidebar-collapsed .brand,
+.runtime-sidebar.sidebar-collapsed .runtime-brand {
+  justify-content: center !important;
+  padding: 0 0 14px !important;
+}
+
+.sidebar.sidebar-collapsed .brand-mark,
+.runtime-sidebar.sidebar-collapsed .runtime-brand-mark {
+  justify-content: center !important;
+  max-width: 48px !important;
 }
 
 .sidebar.sidebar-collapsed .sidebar-nav,
@@ -2358,7 +2354,7 @@ body,
 
 .nav-label.nav-label-compact,
 .runtime-nav-label.nav-label-compact {
-  font-size: 12px !important;
+  font-size: 13px !important;
   line-height: 16px !important;
   white-space: nowrap !important;
   overflow: hidden !important;
@@ -2367,7 +2363,7 @@ body,
 
 .nav-label.nav-label-tiny,
 .runtime-nav-label.nav-label-tiny {
-  font-size: 11px !important;
+  font-size: 12px !important;
   line-height: 14px !important;
   white-space: nowrap !important;
   overflow: hidden !important;

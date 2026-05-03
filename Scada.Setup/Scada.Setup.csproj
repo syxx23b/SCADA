@@ -25,6 +25,10 @@
 
   <ItemGroup>
     <None Include="Properties\app.manifest" />
+    <Content Include="Assets\launcher.ico" Link="launcher.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

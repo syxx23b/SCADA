@@ -312,13 +312,13 @@ function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
 const baseSidebarItems: SidebarItem[] = [
   { key: 'dashboard', label: '数据看板', icon: <DashboardSidebarIcon /> },
   { key: 'factoryReportDj', label: '出厂记录-电机泵', icon: <FactoryRecordSidebarIcon /> },
-  { key: 'factoryReportMotor', label: 'FactoryReport-Motor', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'factoryReportMotor', label: 'Motor-FactoryRpt.', icon: <FactoryRecordSidebarIcon /> },
   { key: 'factoryReportQyj', label: '出厂记录-汽油机', icon: <FactoryRecordSidebarIcon /> },
-  { key: 'factoryReportEngine', label: 'FactoryReport-Engine', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'factoryReportEngine', label: 'Engine-FactoryRpt.', icon: <FactoryRecordSidebarIcon /> },
   { key: 'enduranceReportDj', label: '耐久报表-电机泵', icon: <FactoryRecordSidebarIcon /> },
-  { key: 'enduranceReportMotor', label: 'EnduranceReport-Motor', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'enduranceReportMotor', label: 'Motor-EnduranceRpt.', icon: <FactoryRecordSidebarIcon /> },
   { key: 'enduranceReportQyj', label: '耐久报表-汽油机', icon: <FactoryRecordSidebarIcon /> },
-  { key: 'enduranceReportEngine', label: 'EnduranceReport-Engine', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'enduranceReportEngine', label: 'Engine-EnduranceRpt.', icon: <FactoryRecordSidebarIcon /> },
   { key: 'efficiency', label: '效率分析', icon: <EfficiencySidebarIcon /> },
   { key: 'fault', label: '故障分析', icon: <FaultSidebarIcon /> },
   { key: 'production', label: '产量统计', icon: <ProductionSidebarIcon /> },
@@ -2477,11 +2477,11 @@ function App() {
       const itemClass = isRuntime ? (view === item.key ? 'runtime-nav active' : 'runtime-nav') : (view === item.key ? 'nav-item active' : 'nav-item')
       const iconClass = isRuntime ? 'runtime-nav-icon' : 'nav-icon'
       const hasEnglishTitle = /[A-Za-z]/.test(item.label)
-      const isEnduranceEnglish = item.key === 'enduranceReportMotor' || item.key === 'enduranceReportEngine'
+      const isEnduranceEngine = item.key === 'enduranceReportEngine'
       const labelClass = [
         isRuntime ? 'runtime-nav-label' : 'nav-label',
         hasEnglishTitle ? 'nav-label-compact' : '',
-        isEnduranceEnglish ? 'nav-label-tiny' : '',
+        isEnduranceEngine ? 'nav-label-tiny' : '',
       ].filter(Boolean).join(' ')
       const itemTitle = isSidebarCollapsed ? item.label : undefined
       const shouldRenderReportServiceTitle = item.key === firstVisibleReportKey
@@ -3636,6 +3636,7 @@ function App() {
     <aside className={`sidebar${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <div className="brand">
         <div className="brand-mark">
+          <img className="brand-logo-icon" src="/sidebar-brand-logo.svg" alt="" />
           <BrandAnimatedTitle key={`brand-title-${brandAnimTick}`} />
         </div>
       </div>

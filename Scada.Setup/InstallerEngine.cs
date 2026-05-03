@@ -40,6 +40,7 @@ internal static class InstallerEngine
         ConfigureFirewall(options, log);
 
         RunProcess("sc.exe", $"start {options.ServiceName}", ignoreErrors: false, log);
+        CreateDesktopShortcut(options, log);
 
         log("安装完成。");
         log($"服务名称：{options.ServiceName}");
@@ -53,6 +54,7 @@ internal static class InstallerEngine
 
         StopAndDeleteService(options, log);
         RunProcess("netsh", $"advfirewall firewall delete rule name=\"{options.ServiceDisplayName} TCP {options.Port}\"", ignoreErrors: true, log);
+        DeleteDesktopShortcut(log);
 
         if (Directory.Exists(options.InstallDirectory))
         {
@@ -79,6 +81,52 @@ internal static class InstallerEngine
         var ruleName = $"{options.ServiceDisplayName} TCP {options.Port}";
         RunProcess("netsh", $"advfirewall firewall delete rule name=\"{ruleName}\"", ignoreErrors: true, log);
         RunProcess("netsh", $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localport={options.Port}", ignoreErrors: false, log);
+    }
+
+    private static void CreateDesktopShortcut(InstallerOptions options, Action<string> log)
+    {
+        var desktopDirectory = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+        Directory.CreateDirectory(desktopDirectory);
+
+        var shortcutPath = Path.Combine(desktopDirectory, "清洗机测试管理平台.url");
+        var iconPath = CopyLauncherIcon(options.InstallDirectory);
+        var shortcutContent = string.Join(Environment.NewLine, new[]
+        {
+            "[InternetShortcut]",
+            "URL=http://localhost:5000/",
+            $"IconFile={iconPath}",
+            "IconIndex=0",
+            string.Empty,
+        });
+
+        File.WriteAllText(shortcutPath, shortcutContent, Encoding.UTF8);
+        log($"已创建桌面启动方式：{shortcutPath}");
+    }
+
+    private static string CopyLauncherIcon(string installDirectory)
+    {
+        var sourceIconPath = Path.Combine(AppContext.BaseDirectory, "launcher.ico");
+        var installedIconPath = Path.Combine(installDirectory, "清洗机测试管理平台.ico");
+        if (!File.Exists(sourceIconPath))
+        {
+            return Path.Combine(installDirectory, "Scada.Api.exe");
+        }
+
+        File.Copy(sourceIconPath, installedIconPath, overwrite: true);
+        return installedIconPath;
+    }
+
+    private static void DeleteDesktopShortcut(Action<string> log)
+    {
+        var desktopDirectory = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
+        var shortcutPath = Path.Combine(desktopDirectory, "清洗机测试管理平台.url");
+        if (!File.Exists(shortcutPath))
+        {
+            return;
+        }
+
+        File.Delete(shortcutPath);
+        log($"已删除桌面启动方式：{shortcutPath}");
     }
 
     private static void CopyDirectory(string sourceDirectory, string destinationDirectory)
