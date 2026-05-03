@@ -106,13 +106,19 @@ function ReworkManageIcon({ set }: { set: ReworkIconSet }) {
   if (set === 4) {
     return (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <rect x="2.1" y="2.1" width="3.1" height="3.1" rx="0.6" stroke="currentColor" strokeWidth="1.3" />
-        <rect x="2.1" y="10.8" width="3.1" height="3.1" rx="0.6" stroke="currentColor" strokeWidth="1.3" />
-        <rect x="6.5" y="2.1" width="3.1" height="3.1" rx="0.6" stroke="currentColor" strokeWidth="1.3" />
-        <rect x="11.2" y="2.1" width="2.7" height="2.7" rx="0.55" fill="currentColor" />
-        <rect x="11.2" y="6.4" width="2.7" height="2.7" rx="0.55" fill="currentColor" />
-        <rect x="6.5" y="10.8" width="2.7" height="2.7" rx="0.55" fill="currentColor" />
-        <rect x="11.2" y="10.8" width="2.7" height="2.7" rx="0.55" fill="currentColor" />
+        <path d="M2.1 5.1V2.1H5.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M10.9 2.1H13.9V5.1" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M13.9 10.9V13.9H10.9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M5.1 13.9H2.1V10.9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <rect x="4.5" y="4.5" width="1.8" height="1.8" rx="0.3" fill="currentColor" />
+        <rect x="7.1" y="4.5" width="1.2" height="1.2" rx="0.25" fill="currentColor" />
+        <rect x="9" y="4.5" width="1.8" height="1.8" rx="0.3" fill="currentColor" />
+        <rect x="4.5" y="7.1" width="1.2" height="1.2" rx="0.25" fill="currentColor" />
+        <rect x="6.7" y="7.1" width="2.6" height="2.6" rx="0.35" stroke="currentColor" strokeWidth="1.1" />
+        <rect x="10.1" y="7.1" width="1.2" height="1.2" rx="0.25" fill="currentColor" />
+        <rect x="4.5" y="9.9" width="1.8" height="1.8" rx="0.3" fill="currentColor" />
+        <rect x="7.4" y="10.2" width="1.2" height="1.2" rx="0.25" fill="currentColor" />
+        <rect x="9.6" y="9.9" width="1.8" height="1.8" rx="0.3" fill="currentColor" />
       </svg>
     )
   }
@@ -330,7 +336,6 @@ const protectedSidebarItems: SidebarItem[] = [
   { key: 'reportConfig', label: '报表配置', icon: <ReportConfigSidebarIcon /> },
 ]
 
-const dashboardFaceplateIndexes = [1, 2, 3, 4] as const
 const DASHBOARD_TEMPLATE_FIELDS = [
   'barcode',
   'automode0_factory1_endurance',
@@ -370,6 +375,9 @@ const FACTORY_REPORT_ENCODED_PATH = 'QYJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5
 const FACTORY_REPORT_CN_PATH = 'QYJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt'
 const REPORT_SERVER_BASE_URL = ''
 const REPORT_VISIBILITY_STORAGE_KEY = 'scada-web.report-visibility'
+const STATION_COUNT_STORAGE_KEY = 'scada-web.station-count'
+const DEFAULT_STATION_COUNT = 4
+const MAX_STATION_COUNT = 64
 type FactoryReportKey = 'factoryReportDj' | 'factoryReportMotor' | 'factoryReportQyj' | 'factoryReportEngine'
 type ReportKey = FactoryReportKey | 'enduranceReportDj' | 'enduranceReportMotor' | 'enduranceReportQyj' | 'enduranceReportEngine'
 type ReworkServiceKey = 'rework' | 'reworkConfig' | 'reworkRecords'
@@ -436,6 +444,25 @@ const REPORTS: Record<ReportKey, { title: string; subtitle: string; iframeUrl: s
     iframeUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
     openUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
   },
+}
+
+function normalizeStationCount(value: number) {
+  if (!Number.isFinite(value)) return DEFAULT_STATION_COUNT
+  return Math.max(1, Math.min(MAX_STATION_COUNT, Math.trunc(value)))
+}
+
+function createStationIndexes(stationCount: number) {
+  return Array.from({ length: normalizeStationCount(stationCount) }, (_, index) => index + 1)
+}
+
+function readInitialStationCount() {
+  try {
+    const raw = window.localStorage.getItem(STATION_COUNT_STORAGE_KEY)
+    if (!raw) return DEFAULT_STATION_COUNT
+    return normalizeStationCount(Number(raw))
+  } catch {
+    return DEFAULT_STATION_COUNT
+  }
 }
 
 
@@ -639,7 +666,7 @@ function isLocalRecipeNameTag(tag: TagDefinition) {
   })
 }
 
-function isExactRecipeDbRecipeNameTag(tag: TagDefinition, slot: 1 | 2): boolean {
+function isExactRecipeDbRecipeNameTag(tag: TagDefinition, slot: number): boolean {
   const target = `Recipe_DB.RecipeName[${slot}]`
   return (tag.displayName ?? '').trim() === target
 }
@@ -1008,6 +1035,9 @@ function App() {
     }
   })
 
+  const [stationCount, setStationCount] = useState(readInitialStationCount)
+  const dashboardFaceplateIndexes = useMemo(() => createStationIndexes(stationCount), [stationCount])
+
   const [writeDrafts, setWriteDrafts] = useState<Record<string, string>>({})
   const [selectedDeviceId, setSelectedDeviceId] = useState('')
   const [deviceDraft, setDeviceDraft] = useState<DeviceFormState>(EMPTY_DEVICE_FORM)
@@ -1148,7 +1178,7 @@ function App() {
         setEfficiencyLoading(true)
       }
 
-      const response = await getEfficiencyTimeline(12)
+      const response = await getEfficiencyTimeline(12, stationCount)
       setEfficiencyTimeline(response)
 
       if (!silent) {
@@ -1166,7 +1196,7 @@ function App() {
 
       efficiencyRequestPendingRef.current = false
     }
-  }, [])
+  }, [stationCount])
 
   const loadProductionByGw = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false
@@ -1772,32 +1802,21 @@ function App() {
   }, [dashboardDataList])
 
   const dashboardSyncTargets = useMemo(() => {
-    const recipe1 = dashboardDataList.find((item) => item.faceplateIndex === 1)
-    const recipe2 = dashboardDataList.find((item) => item.faceplateIndex === 2)
-    const recipe1Mapped = (dashboardTagsByFaceplate[1] ?? []).length > 0
-    const recipe2Mapped = (dashboardTagsByFaceplate[2] ?? []).length > 0
-    const recipeNameTag1 = runtime.tags.find((tag) => isExactRecipeDbRecipeNameTag(tag, 1)) ?? null
-    const recipeNameTag2 = runtime.tags.find((tag) => isExactRecipeDbRecipeNameTag(tag, 2)) ?? null
-    const recipeNameTag1Healthy = recipeNameTag1
-      ? statusOf(recipeNameTag1, snapshotByTagId.get(recipeNameTag1.id), runtimeDeviceStatusById[recipeNameTag1.deviceId]).className === 'normal'
-      : false
-    const recipeNameTag2Healthy = recipeNameTag2
-      ? statusOf(recipeNameTag2, snapshotByTagId.get(recipeNameTag2.id), runtimeDeviceStatusById[recipeNameTag2.deviceId]).className === 'normal'
-      : false
+    return dashboardFaceplateIndexes.map((faceplateIndex) => {
+      const board = dashboardDataList.find((item) => item.faceplateIndex === faceplateIndex)
+      const recipeNameTag = runtime.tags.find((tag) => isExactRecipeDbRecipeNameTag(tag, faceplateIndex)) ?? null
+      const recipeNameTagHealthy = recipeNameTag
+        ? statusOf(recipeNameTag, snapshotByTagId.get(recipeNameTag.id), runtimeDeviceStatusById[recipeNameTag.deviceId]).className === 'normal'
+        : false
 
-    return {
-      recipe1: {
-        visible: recipe1Mapped,
-        disabled: !recipeNameTag1Healthy,
-        label: recipe1?.title ?? '工位1',
-      },
-      recipe2: {
-        visible: recipe2Mapped,
-        disabled: !recipeNameTag2Healthy,
-        label: recipe2?.title ?? '工位2',
-      },
-    }
-  }, [dashboardDataList, dashboardTagsByFaceplate, runtime.tags, runtimeDeviceStatusById, snapshotByTagId])
+      return {
+        index: faceplateIndex,
+        visible: true,
+        disabled: !recipeNameTagHealthy,
+        label: board?.title ?? `工位${faceplateIndex}`,
+      }
+    })
+  }, [dashboardDataList, dashboardFaceplateIndexes, runtime.tags, runtimeDeviceStatusById, snapshotByTagId])
 
 
   const filteredRuntimeTags = useMemo(() => {
@@ -2135,6 +2154,14 @@ function App() {
       // ignore storage errors
     }
   }, [reportVisibility])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STATION_COUNT_STORAGE_KEY, String(stationCount))
+    } catch {
+      // ignore storage errors
+    }
+  }, [stationCount])
   useEffect(() => {
     const currentReportKey = view as ReportKey
     if (!MENU_VISIBILITY_KEYS.includes(currentReportKey as MenuVisibilityKey)) return
@@ -3428,12 +3455,7 @@ function App() {
             onLoadRecipe={handleLoadDJRecipe}
             onDeleteRecipe={handleDeleteDJRecipe}
             loadedRecipeName={djLoadedRecipeName}
-            showRecipe1SyncButton={dashboardSyncTargets.recipe1.visible}
-            showRecipe2SyncButton={dashboardSyncTargets.recipe2.visible}
-            disableRecipe1SyncButton={dashboardSyncTargets.recipe1.disabled}
-            disableRecipe2SyncButton={dashboardSyncTargets.recipe2.disabled}
-            recipe1SyncLabel={dashboardSyncTargets.recipe1.label}
-            recipe2SyncLabel={dashboardSyncTargets.recipe2.label}
+            recipeSyncTargets={dashboardSyncTargets}
           />
 
         ) : (
@@ -3450,12 +3472,7 @@ function App() {
             onLoadRecipe={handleLoadQYJRecipe}
             onDeleteRecipe={handleDeleteQYJRecipe}
             loadedRecipeName={qyjLoadedRecipeName}
-            showRecipe1SyncButton={dashboardSyncTargets.recipe1.visible}
-            showRecipe2SyncButton={dashboardSyncTargets.recipe2.visible}
-            disableRecipe1SyncButton={dashboardSyncTargets.recipe1.disabled}
-            disableRecipe2SyncButton={dashboardSyncTargets.recipe2.disabled}
-            recipe1SyncLabel={dashboardSyncTargets.recipe1.label}
-            recipe2SyncLabel={dashboardSyncTargets.recipe2.label}
+            recipeSyncTargets={dashboardSyncTargets}
           />
 
         )}
@@ -3492,8 +3509,20 @@ function App() {
       <section className="content-strip">
         <div className="config-card">
           <div className="config-card-head">
-            <div className="config-card-title">报表服务</div>
-            <div className="config-card-subtitle">仅登录后可见；开关关闭后，侧边栏将隐藏对应报表入口</div>
+            <div className="config-card-copy">
+              <div className="config-card-title">报表服务</div>
+              <div className="config-card-subtitle">仅登录后可见；开关关闭后，侧边栏将隐藏对应报表入口</div>
+            </div>
+            <label className="station-count-control">
+              <span>工位数量</span>
+              <input
+                type="number"
+                min={1}
+                max={MAX_STATION_COUNT}
+                value={stationCount}
+                onChange={(event) => setStationCount(normalizeStationCount(Number(event.target.value)))}
+              />
+            </label>
           </div>
 
           <div className="report-config-list">

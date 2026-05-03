@@ -18,9 +18,10 @@ public sealed class EfficiencyController : ControllerBase
     [HttpGet("timeline")]
     public async Task<ActionResult<EfficiencyTimelineResponseDto>> GetTimeline(
         [FromQuery] int hours = 24,
+        [FromQuery] int stationCount = 4,
         CancellationToken cancellationToken = default)
     {
-        var timeline = await _efficiencyAnalysisService.GetTimelineAsync(hours, cancellationToken);
+        var timeline = await _efficiencyAnalysisService.GetTimelineAsync(hours, stationCount, cancellationToken);
         return Ok(timeline);
     }
 }

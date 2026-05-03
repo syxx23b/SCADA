@@ -987,6 +987,19 @@
 }
 
 .recipe-sync-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
+
+.recipe-sync-card .recipe-sheet-head-main {
+  width: 100%;
+}
+
+.recipe-sync-card .recipe-sheet-actions {
+  width: 100%;
+  flex-wrap: wrap;
   justify-content: flex-start;
 }
 

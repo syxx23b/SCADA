@@ -9,6 +9,13 @@ interface RecipeFile {
   updatedAt: string
 }
 
+type RecipeSyncTarget = {
+  index: number
+  visible: boolean
+  disabled?: boolean
+  label: string
+}
+
 interface RecipeDJProps {
   sourceTags: TagDefinition[]
   allTags: TagDefinition[]
@@ -22,12 +29,7 @@ interface RecipeDJProps {
   onLoadRecipe: (recipeId: string) => Promise<boolean>
   onDeleteRecipe: (recipeId: string) => Promise<boolean>
   loadedRecipeName?: string
-  showRecipe1SyncButton: boolean
-  showRecipe2SyncButton: boolean
-  disableRecipe1SyncButton?: boolean
-  disableRecipe2SyncButton?: boolean
-  recipe1SyncLabel: string
-  recipe2SyncLabel: string
+  recipeSyncTargets: RecipeSyncTarget[]
 }
 
 
@@ -579,12 +581,7 @@ export function RecipeDJ({
   onLoadRecipe,
   onDeleteRecipe,
   loadedRecipeName,
-  showRecipe1SyncButton,
-  showRecipe2SyncButton,
-  disableRecipe1SyncButton = false,
-  disableRecipe2SyncButton = false,
-  recipe1SyncLabel,
-  recipe2SyncLabel,
+  recipeSyncTargets,
 }: RecipeDJProps) {
   const motorTypeTag = useMemo(() => findTagByFieldKey(sourceTags, 'motorType'), [sourceTags])
   const dcHoldingPowerOffTag = useMemo(() => findTagByFieldKey(sourceTags, 'dcHoldingPowerOff'), [sourceTags])
@@ -995,7 +992,7 @@ export function RecipeDJ({
           return tryWrite()
         }
 
-        const syncTo = async (recipeIndex: 1 | 2) => {
+        const syncTo = async (recipeIndex: number) => {
           showFeedback(`开始同步到 Recipe_DB.DJRecipe[${recipeIndex}]...`, {
             tone: 'warning',
             durationMs: 4000,
@@ -1083,16 +1080,17 @@ export function RecipeDJ({
               <p className="recipe-sheet-subtitle">请核对参数，同步到测试工位</p>
             </div>
             <div className="recipe-sheet-actions">
-              {showRecipe1SyncButton ? (
-                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(1)} disabled={disableRecipe1SyncButton}>
-                  {recipe1SyncLabel || '同步到工位1 (DJRecipe[1])'}
+              {recipeSyncTargets.filter((target) => target.visible).map((target) => (
+                <button
+                  key={target.index}
+                  type="button"
+                  className="recipe-btn recipe-btn-save"
+                  onClick={() => void syncTo(target.index)}
+                  disabled={target.disabled}
+                >
+                  {`同步到${target.label || `工位${target.index}`}`}
                 </button>
-              ) : null}
-              {showRecipe2SyncButton ? (
-                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(2)} disabled={disableRecipe2SyncButton}>
-                  {recipe2SyncLabel || '同步到工位2 (DJRecipe[2])'}
-                </button>
-              ) : null}
+              ))}
             </div>
           </div>
         )

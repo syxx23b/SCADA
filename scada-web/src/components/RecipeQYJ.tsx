@@ -9,6 +9,13 @@ interface RecipeFile {
   updatedAt: string
 }
 
+type RecipeSyncTarget = {
+  index: number
+  visible: boolean
+  disabled?: boolean
+  label: string
+}
+
 interface RecipeQYJProps {
   sourceTags: TagDefinition[]
   allTags: TagDefinition[]
@@ -20,12 +27,7 @@ interface RecipeQYJProps {
   onLoadRecipe: (recipeId: string) => Promise<boolean>
   onDeleteRecipe: (recipeId: string) => Promise<boolean>
   loadedRecipeName?: string
-  showRecipe1SyncButton: boolean
-  showRecipe2SyncButton: boolean
-  disableRecipe1SyncButton?: boolean
-  disableRecipe2SyncButton?: boolean
-  recipe1SyncLabel: string
-  recipe2SyncLabel: string
+  recipeSyncTargets: RecipeSyncTarget[]
 }
 
 type DictionaryOption = {
@@ -357,12 +359,7 @@ export function RecipeQYJ({
   onLoadRecipe,
   onDeleteRecipe,
   loadedRecipeName,
-  showRecipe1SyncButton,
-  showRecipe2SyncButton,
-  disableRecipe1SyncButton = false,
-  disableRecipe2SyncButton = false,
-  recipe1SyncLabel,
-  recipe2SyncLabel,
+  recipeSyncTargets,
 }: RecipeQYJProps) {
   const [recipeFileName, setRecipeFileName] = useState('')
   const [selectedRecipeId, setSelectedRecipeId] = useState('')
@@ -654,7 +651,7 @@ export function RecipeQYJ({
       </div>
 
       {(() => {
-      const syncTo = async (recipeIndex: 1 | 2) => {
+      const syncTo = async (recipeIndex: number) => {
           const writeWithRetry = async (tagId: string, value: string) => {
             const tryWrite = () =>
               Promise.race<boolean>([
@@ -675,12 +672,15 @@ export function RecipeQYJ({
 
           for (const item of QYJ_FIELDS) {
             const sourceTag = findTagByExactPath(sourceTags, item.sourcePath)
-            const targetTag = findTagByExactPath(allTags, item.targetPaths[recipeIndex - 1])
+            const targetPath = item.fieldKey === 'recipeName'
+              ? `Recipe_DB.RecipeName[${recipeIndex}]`
+              : `Recipe_DB.QYJRecipe[${recipeIndex}].${item.fieldKey}`
+            const targetTag = findTagByExactPath(allTags, targetPath)
 
             if (!sourceTag) {
               skippedCount += 1
               issueRows.push({
-                target: item.targetPaths[recipeIndex - 1],
+                target: targetPath,
                 source: item.sourcePath,
                 value: '-',
                 reason: 'Source tag not found',
@@ -690,7 +690,7 @@ export function RecipeQYJ({
             if (!targetTag) {
               skippedCount += 1
               issueRows.push({
-                target: item.targetPaths[recipeIndex - 1],
+                target: targetPath,
                 source: item.sourcePath,
                 value: '-',
                 reason: 'Target tag not found',
@@ -700,7 +700,7 @@ export function RecipeQYJ({
             if (!targetTag.allowWrite) {
               failedCount += 1
               issueRows.push({
-                target: item.targetPaths[recipeIndex - 1],
+                target: targetPath,
                 source: item.sourcePath,
                 value: '-',
                 reason: 'Target tag is read-only (allowWrite=false)',
@@ -712,7 +712,7 @@ export function RecipeQYJ({
             if (!snapshot || snapshot.value === undefined || snapshot.value === null) {
               skippedCount += 1
               issueRows.push({
-                target: item.targetPaths[recipeIndex - 1],
+                target: targetPath,
                 source: item.sourcePath,
                 value: '-',
                 reason: 'Source snapshot missing',
@@ -724,7 +724,7 @@ export function RecipeQYJ({
             if (sourceValue === '') {
               skippedCount += 1
               issueRows.push({
-                target: item.targetPaths[recipeIndex - 1],
+                target: targetPath,
                 source: item.sourcePath,
                 value: '(empty)',
                 reason: 'Source value is empty',
@@ -740,7 +740,7 @@ export function RecipeQYJ({
 
             failedCount += 1
             issueRows.push({
-              target: item.targetPaths[recipeIndex - 1],
+              target: targetPath,
               source: item.sourcePath,
               value: sourceValue,
               reason: `Write failed or timeout(>${SYNC_WRITE_TIMEOUT_MS}ms)`,
@@ -770,16 +770,17 @@ export function RecipeQYJ({
               <p className="recipe-sheet-subtitle">同步前请确认当前配方参数。</p>
             </div>
             <div className="recipe-sheet-actions">
-              {showRecipe1SyncButton ? (
-                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(1)} disabled={disableRecipe1SyncButton}>
-                  {recipe1SyncLabel || '同步到工位1'}
+              {recipeSyncTargets.filter((target) => target.visible).map((target) => (
+                <button
+                  key={target.index}
+                  type="button"
+                  className="recipe-btn recipe-btn-save"
+                  onClick={() => void syncTo(target.index)}
+                  disabled={target.disabled}
+                >
+                  {`同步到${target.label || `工位${target.index}`}`}
                 </button>
-              ) : null}
-              {showRecipe2SyncButton ? (
-                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(2)} disabled={disableRecipe2SyncButton}>
-                  {recipe2SyncLabel || '同步到工位2'}
-                </button>
-              ) : null}
+              ))}
             </div>
           </div>
         )

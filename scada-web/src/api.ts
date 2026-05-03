@@ -220,8 +220,12 @@ export function getRuntimeOverview() {
   return request<RuntimeOverview>('/api/runtime/overview')
 }
 
-export function getEfficiencyTimeline(hours = 24) {
-  return request<EfficiencyTimelineResponse>(`/api/efficiency/timeline?hours=${hours}`)
+export function getEfficiencyTimeline(hours = 24, stationCount = 4) {
+  const query = new URLSearchParams({
+    hours: String(hours),
+    stationCount: String(stationCount),
+  })
+  return request<EfficiencyTimelineResponse>(`/api/efficiency/timeline?${query.toString()}`)
 }
 
 export function getProductionTodayByGw() {

@@ -8,12 +8,13 @@ namespace Scada.Api.Services;
 public interface IEfficiencyAnalysisService
 {
     Task CaptureCurrentStateAsync(CancellationToken cancellationToken);
-    Task<EfficiencyTimelineResponseDto> GetTimelineAsync(int hours, CancellationToken cancellationToken);
+    Task<EfficiencyTimelineResponseDto> GetTimelineAsync(int hours, int stationCount, CancellationToken cancellationToken);
 }
 
 public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
 {
-    private static readonly int[] FaceplateIndexes = [1, 2, 3, 4];
+    private const int DefaultStationCount = 4;
+    private const int MaxStationCount = 64;
     private static readonly HashSet<string> DashboardFieldKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "barcode",
@@ -67,7 +68,7 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
             await using var scope = _scopeFactory.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ScadaDbContext>();
             var now = DateTimeOffset.UtcNow;
-            await CaptureLiveStateInternalAsync(dbContext, now, cancellationToken);
+            await CaptureLiveStateInternalAsync(dbContext, now, null, cancellationToken);
             await CleanupOldSegmentsAsync(dbContext, now, cancellationToken);
             if (dbContext.ChangeTracker.HasChanges())
             {
@@ -80,9 +81,10 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
         }
     }
 
-    public async Task<EfficiencyTimelineResponseDto> GetTimelineAsync(int hours, CancellationToken cancellationToken)
+    public async Task<EfficiencyTimelineResponseDto> GetTimelineAsync(int hours, int stationCount, CancellationToken cancellationToken)
     {
         var clampedHours = Math.Clamp(hours, 1, 72);
+        var faceplateIndexes = BuildFaceplateIndexes(stationCount);
         await _syncLock.WaitAsync(cancellationToken);
         try
         {
@@ -91,7 +93,7 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
             var windowEnd = DateTimeOffset.UtcNow;
             var windowStart = windowEnd.AddHours(-clampedHours);
 
-            await CaptureLiveStateInternalAsync(dbContext, windowEnd, cancellationToken);
+            await CaptureLiveStateInternalAsync(dbContext, windowEnd, faceplateIndexes, cancellationToken);
             await CleanupOldSegmentsAsync(dbContext, windowEnd, cancellationToken);
             if (dbContext.ChangeTracker.HasChanges())
             {
@@ -100,7 +102,7 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
 
             var segments = await dbContext.EfficiencyTimelineSegments
                 .AsNoTracking()
-                .Where(item => FaceplateIndexes.Contains(item.FaceplateIndex))
+                .Where(item => faceplateIndexes.Contains(item.FaceplateIndex))
                 .ToListAsync(cancellationToken);
 
             segments = segments
@@ -109,7 +111,7 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
                 .ThenBy(item => item.StartedAt)
                 .ToList();
 
-            var lanes = FaceplateIndexes.Select(faceplateIndex =>
+            var lanes = faceplateIndexes.Select(faceplateIndex =>
             {
                 var laneSegments = segments
                     .Where(item => item.FaceplateIndex == faceplateIndex)
@@ -143,12 +145,16 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
         }
     }
 
-    private async Task CaptureLiveStateInternalAsync(ScadaDbContext dbContext, DateTimeOffset now, CancellationToken cancellationToken)
+    private async Task CaptureLiveStateInternalAsync(
+        ScadaDbContext dbContext,
+        DateTimeOffset now,
+        IReadOnlyList<int>? requestedFaceplateIndexes,
+        CancellationToken cancellationToken)
     {
         try
         {
             var overview = await _runtimeCoordinator.GetRuntimeOverviewAsync(cancellationToken);
-            foreach (var state in BuildCurrentBoardStates(overview))
+            foreach (var state in BuildCurrentBoardStates(overview, requestedFaceplateIndexes ?? ResolveRuntimeFaceplateIndexes(overview)))
             {
                 await UpsertCurrentStateAsync(dbContext, state, now, cancellationToken);
             }
@@ -169,7 +175,7 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
         DateTimeOffset windowEnd,
         CancellationToken cancellationToken)
     {
-        foreach (var faceplateIndex in FaceplateIndexes)
+        foreach (var faceplateIndex in BuildFaceplateIndexes(DefaultStationCount))
         {
             var earliestSegment = (await dbContext.EfficiencyTimelineSegments
                 .Where(item => item.FaceplateIndex == faceplateIndex)
@@ -266,6 +272,26 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
         }
     }
 
+    private static int[] BuildFaceplateIndexes(int stationCount)
+    {
+        var clampedCount = Math.Clamp(stationCount, 1, MaxStationCount);
+        return Enumerable.Range(1, clampedCount).ToArray();
+    }
+
+    private static IReadOnlyList<int> ResolveRuntimeFaceplateIndexes(RuntimeOverviewDto overview)
+    {
+        var maxIndex = DefaultStationCount;
+        foreach (var tag in overview.Tags)
+        {
+            if (TryGetDashboardTemplateField(tag, out var faceplateIndex, out _) && faceplateIndex > maxIndex)
+            {
+                maxIndex = faceplateIndex;
+            }
+        }
+
+        return BuildFaceplateIndexes(maxIndex);
+    }
+
     private static List<EfficiencyTimelineSegmentEntity> BuildDemoSegments(
         int faceplateIndex,
         string stationName,
@@ -327,12 +353,12 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
         return result;
     }
 
-    private static IEnumerable<FaceplateBoardState> BuildCurrentBoardStates(RuntimeOverviewDto overview)
+    private static IEnumerable<FaceplateBoardState> BuildCurrentBoardStates(RuntimeOverviewDto overview, IReadOnlyList<int> faceplateIndexes)
     {
         var snapshotByTagId = overview.Snapshots.ToDictionary(item => item.TagId, item => item);
         var deviceStatusById = overview.Devices.ToDictionary(item => item.DeviceId, item => item.Status);
-        var indexSet = FaceplateIndexes.ToHashSet();
-        var tagMapByFaceplate = FaceplateIndexes.ToDictionary(
+        var indexSet = faceplateIndexes.ToHashSet();
+        var tagMapByFaceplate = faceplateIndexes.ToDictionary(
             index => index,
             _ => new Dictionary<string, TagDefinitionDto>(StringComparer.OrdinalIgnoreCase));
 
@@ -351,7 +377,7 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
             tagMapByFaceplate[faceplateIndex][fieldKey] = tag;
         }
 
-        foreach (var faceplateIndex in FaceplateIndexes)
+        foreach (var faceplateIndex in faceplateIndexes)
         {
             var faceplateTagMap = tagMapByFaceplate[faceplateIndex];
             var faceplateTags = faceplateTagMap.Values
