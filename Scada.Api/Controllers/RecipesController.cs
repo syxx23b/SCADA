@@ -1,8 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Scada.Api.Data;
-using Scada.Api.Domain;
 using Scada.Api.Dtos;
+using Scada.Api.Services;
 
 namespace Scada.Api.Controllers;
 
@@ -10,11 +8,11 @@ namespace Scada.Api.Controllers;
 [Route("api/[controller]")]
 public sealed class RecipesController : ControllerBase
 {
-    private readonly ScadaDbContext _dbContext;
+    private readonly IMssqlRecipeStore _recipeStore;
 
-    public RecipesController(ScadaDbContext dbContext)
+    public RecipesController(IMssqlRecipeStore recipeStore)
     {
-        _dbContext = dbContext;
+        _recipeStore = recipeStore;
     }
 
     // GET: api/recipes?type=DJ
@@ -23,18 +21,8 @@ public sealed class RecipesController : ControllerBase
         [FromQuery] string? type = null,
         CancellationToken cancellationToken = default)
     {
-        var query = _dbContext.Recipes.AsNoTracking();
-
-        if (!string.IsNullOrWhiteSpace(type))
-        {
-            query = query.Where(r => r.RecipeType == type);
-        }
-
-        var recipes = await query
-            .Select(r => r.ToDto())
-            .ToListAsync(cancellationToken);
-
-        return Ok(recipes.OrderByDescending(r => r.UpdatedAt).ToList());
+        var recipes = await _recipeStore.GetRecipesAsync(type, cancellationToken);
+        return Ok(recipes);
     }
 
     // GET: api/recipes/{id}
@@ -43,28 +31,8 @@ public sealed class RecipesController : ControllerBase
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var recipe = await _dbContext.Recipes
-            .AsNoTracking()
-            .Include(r => r.Items)
-            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
-
-        if (recipe == null)
-        {
-            return NotFound();
-        }
-
-        var items = recipe.Items.ToDictionary(
-            item => item.FieldKey,
-            item => item.Value);
-
-        return Ok(new RecipeDetailDto(
-            recipe.Id,
-            recipe.Name,
-            recipe.Description,
-            recipe.RecipeType,
-            recipe.CreatedAt,
-            recipe.UpdatedAt,
-            items));
+        var recipe = await _recipeStore.GetRecipeAsync(id, cancellationToken);
+        return recipe == null ? NotFound() : Ok(recipe);
     }
 
     // POST: api/recipes
@@ -83,35 +51,15 @@ public sealed class RecipesController : ControllerBase
             return BadRequest("配方类型不能为空");
         }
 
-        // 检查同名配方是否已存在
-        var existingRecipe = await _dbContext.Recipes
-            .FirstOrDefaultAsync(r => r.Name == request.Name && r.RecipeType == request.RecipeType, cancellationToken);
-
-        if (existingRecipe != null)
+        try
         {
-            return Conflict($"已存在名为 '{request.Name}' 的配方");
+            var recipe = await _recipeStore.CreateRecipeAsync(request, cancellationToken);
+            return CreatedAtAction(nameof(GetRecipe), new { id = recipe.Id }, recipe);
         }
-
-        var recipe = new RecipeEntity
+        catch (InvalidOperationException exception)
         {
-            Id = Guid.NewGuid(),
-            Name = request.Name.Trim(),
-            Description = request.Description?.Trim() ?? string.Empty,
-            RecipeType = request.RecipeType.Trim().ToUpper(),
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
-            Items = request.Items?.Select(kv => new RecipeItemEntity
-            {
-                Id = Guid.NewGuid(),
-                FieldKey = kv.Key,
-                Value = kv.Value
-            }).ToList() ?? []
-        };
-
-        _dbContext.Recipes.Add(recipe);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        return CreatedAtAction(nameof(GetRecipe), new { id = recipe.Id }, recipe.ToDto());
+            return Conflict(exception.Message);
+        }
     }
 
     // PUT: api/recipes/{id}
@@ -121,46 +69,15 @@ public sealed class RecipesController : ControllerBase
         [FromBody] UpdateRecipeRequest request,
         CancellationToken cancellationToken = default)
     {
-        var recipe = await _dbContext.Recipes
-            .Include(r => r.Items)
-            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
-
-        if (recipe == null)
+        try
         {
-            return NotFound();
+            var recipe = await _recipeStore.UpdateRecipeAsync(id, request, cancellationToken);
+            return recipe == null ? NotFound() : Ok(recipe);
         }
-
-        // 更新基本信息
-        if (!string.IsNullOrWhiteSpace(request.Name))
+        catch (InvalidOperationException exception)
         {
-            recipe.Name = request.Name.Trim();
+            return Conflict(exception.Message);
         }
-        recipe.Description = request.Description?.Trim() ?? recipe.Description;
-        recipe.UpdatedAt = DateTimeOffset.UtcNow;
-
-        // 更新配方项
-        if (request.Items != null)
-        {
-            // 删除旧的配方项
-            _dbContext.RecipeItems.RemoveRange(recipe.Items);
-            recipe.Items.Clear();
-
-            // 添加新的配方项
-            foreach (var kv in request.Items)
-            {
-                recipe.Items.Add(new RecipeItemEntity
-                {
-                    Id = Guid.NewGuid(),
-                    RecipeId = recipe.Id,
-                    FieldKey = kv.Key,
-                    Value = kv.Value
-                });
-            }
-        }
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        return Ok(recipe.ToDto());
     }
 
     // DELETE: api/recipes/{id}
@@ -169,26 +86,9 @@ public sealed class RecipesController : ControllerBase
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var recipe = await _dbContext.Recipes
-            .Include(r => r.Items)
-            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
-
-        if (recipe == null)
-        {
-            return NotFound();
-        }
-
-        if (recipe.Items.Count > 0)
-        {
-            _dbContext.RecipeItems.RemoveRange(recipe.Items);
-        }
-
-        _dbContext.Recipes.Remove(recipe);
-        await _dbContext.SaveChangesAsync(cancellationToken);
-
-        return NoContent();
+        var deleted = await _recipeStore.DeleteRecipeAsync(id, cancellationToken);
+        return deleted ? NoContent() : NotFound();
     }
-
 
     // GET: api/recipes/{id}/items
     [HttpGet("{id:guid}/items")]
@@ -196,20 +96,7 @@ public sealed class RecipesController : ControllerBase
         Guid id,
         CancellationToken cancellationToken = default)
     {
-        var recipe = await _dbContext.Recipes
-            .AsNoTracking()
-            .Include(r => r.Items)
-            .FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
-
-        if (recipe == null)
-        {
-            return NotFound();
-        }
-
-        var items = recipe.Items.ToDictionary(
-            item => item.FieldKey,
-            item => item.Value);
-
-        return Ok(items);
+        var recipe = await _recipeStore.GetRecipeAsync(id, cancellationToken);
+        return recipe == null ? NotFound() : Ok(recipe.Items);
     }
 }

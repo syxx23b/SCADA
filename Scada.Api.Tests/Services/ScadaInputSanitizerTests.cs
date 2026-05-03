@@ -1,4 +1,5 @@
 using Scada.Api.Dtos;
+using Scada.Api.Domain;
 using Scada.Api.Services;
 
 namespace Scada.Api.Tests.Services;
@@ -10,6 +11,7 @@ public sealed class ScadaInputSanitizerTests
     {
         var request = new UpsertDeviceRequest(
             " Line 1 ",
+            null,
             " opc.tcp://127.0.0.1:4840 ",
             null,
             null,
@@ -32,6 +34,7 @@ public sealed class ScadaInputSanitizerTests
     {
         var request = new UpsertDeviceRequest(
             "Mixer",
+            null,
             "opc.tcp://10.0.0.2:4840",
             "Sign",
             "Basic256Sha256",
@@ -45,6 +48,26 @@ public sealed class ScadaInputSanitizerTests
         Assert.Equal("UsernamePassword", result.AuthMode);
         Assert.Equal("engineer", result.Username);
         Assert.Equal("secret", result.Password);
+    }
+
+    [Fact]
+    public void NormalizeDevice_ForSiemensS7Input_UsesSiemensDriverKind()
+    {
+        var request = new UpsertDeviceRequest(
+            "S7 PLC",
+            "SiemensS7",
+            "192.168.0.10",
+            null,
+            null,
+            "UsernamePassword",
+            "admin",
+            "secret",
+            true);
+
+        var result = ScadaInputSanitizer.NormalizeDevice(request);
+
+        Assert.Equal(DeviceDriverKind.SiemensS7, result.DriverKind);
+        Assert.Equal("admin", result.Username);
     }
 
     [Fact]
@@ -74,7 +97,7 @@ public sealed class ScadaInputSanitizerTests
     }
 
     [Fact]
-    public void NormalizeTag_ForDjRecipePrefix_OverridesGroupAndIntervals()
+    public void NormalizeTag_ForDjRecipePrefix_PreservesGroupAndUsesRecipeIntervals()
     {
         var request = new UpsertTagRequest(
             Guid.NewGuid(),
@@ -90,13 +113,13 @@ public sealed class ScadaInputSanitizerTests
 
         var result = ScadaInputSanitizer.NormalizeTag(request);
 
-        Assert.Equal("Device1_Recipe2", result.GroupKey);
-        Assert.Equal(1000, result.SamplingIntervalMs);
-        Assert.Equal(1000, result.PublishingIntervalMs);
+        Assert.Equal("OtherGroup", result.GroupKey);
+        Assert.Equal(500, result.SamplingIntervalMs);
+        Assert.Equal(500, result.PublishingIntervalMs);
     }
 
     [Fact]
-    public void NormalizeTag_ForQyjRecipePrefix_OverridesGroupAndIntervals()
+    public void NormalizeTag_ForQyjRecipePrefix_PreservesGroupAndUsesRecipeIntervals()
     {
         var request = new UpsertTagRequest(
             Guid.NewGuid(),
@@ -112,18 +135,18 @@ public sealed class ScadaInputSanitizerTests
 
         var result = ScadaInputSanitizer.NormalizeTag(request);
 
-        Assert.Equal("Device1_Recipe1", result.GroupKey);
-        Assert.Equal(1000, result.SamplingIntervalMs);
-        Assert.Equal(1000, result.PublishingIntervalMs);
+        Assert.Equal("OtherGroup", result.GroupKey);
+        Assert.Equal(500, result.SamplingIntervalMs);
+        Assert.Equal(500, result.PublishingIntervalMs);
     }
 
     [Fact]
-    public void NormalizeTag_ForQyiRecipePrefix_OverridesGroupAndIntervals()
+    public void NormalizeTag_ForQyjRecipeSecondIndex_PreservesGroupAndUsesRecipeIntervals()
     {
         var request = new UpsertTagRequest(
             Guid.NewGuid(),
-            "ns=3;s=Recipe_DB.QYIRecipe[2].TriggerCount",
-            "Recipe_DB.QYIRecipe[2].TriggerCount",
+            "ns=3;s=Recipe_DB.QYJRecipe[2].TriggerCount",
+            "Recipe_DB.QYJRecipe[2].TriggerCount",
             "Recipe Trigger Count",
             "Int32",
             200,
@@ -134,13 +157,13 @@ public sealed class ScadaInputSanitizerTests
 
         var result = ScadaInputSanitizer.NormalizeTag(request);
 
-        Assert.Equal("Device1_Recipe2", result.GroupKey);
-        Assert.Equal(1000, result.SamplingIntervalMs);
-        Assert.Equal(1000, result.PublishingIntervalMs);
+        Assert.Equal("OtherGroup", result.GroupKey);
+        Assert.Equal(500, result.SamplingIntervalMs);
+        Assert.Equal(500, result.PublishingIntervalMs);
     }
 
     [Fact]
-    public void NormalizeTag_ForRecipeGroup_OverridesIntervalsTo1000()
+    public void NormalizeTag_ForRecipeGroup_OverridesIntervalsTo500()
     {
         var request = new UpsertTagRequest(
             Guid.NewGuid(),
@@ -157,8 +180,8 @@ public sealed class ScadaInputSanitizerTests
         var result = ScadaInputSanitizer.NormalizeTag(request);
 
         Assert.Equal("Device1_Recipe2", result.GroupKey);
-        Assert.Equal(1000, result.SamplingIntervalMs);
-        Assert.Equal(1000, result.PublishingIntervalMs);
+        Assert.Equal(500, result.SamplingIntervalMs);
+        Assert.Equal(500, result.PublishingIntervalMs);
     }
 
     [Fact]

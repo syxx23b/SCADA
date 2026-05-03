@@ -13,7 +13,35 @@ public interface IEfficiencyAnalysisService
 
 public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
 {
-    private static readonly int[] FaceplateIndexes = [1, 2];
+    private static readonly int[] FaceplateIndexes = [1, 2, 3, 4];
+    private static readonly HashSet<string> DashboardFieldKeys = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "barcode",
+        "automode0_factory1_endurance",
+        "current",
+        "enduranceprocess",
+        "errcode",
+        "failnumber",
+        "flow",
+        "frequency",
+        "inletpressure",
+        "inlettemp",
+        "lasttimehour",
+        "lasttimeminute",
+        "nozzlesize",
+        "passnumber",
+        "power",
+        "powerfactor",
+        "pressure",
+        "siphon",
+        "speed",
+        "stationnumber",
+        "triggercount",
+        "triggeroffprocess",
+        "triggeronprocess",
+        "voltage",
+        "workflow",
+    };
     private static readonly TimeSpan DataRetention = TimeSpan.FromDays(7);
 
     private readonly IServiceScopeFactory _scopeFactory;
@@ -303,33 +331,58 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
     {
         var snapshotByTagId = overview.Snapshots.ToDictionary(item => item.TagId, item => item);
         var deviceStatusById = overview.Devices.ToDictionary(item => item.DeviceId, item => item.Status);
+        var indexSet = FaceplateIndexes.ToHashSet();
+        var tagMapByFaceplate = FaceplateIndexes.ToDictionary(
+            index => index,
+            _ => new Dictionary<string, TagDefinitionDto>(StringComparer.OrdinalIgnoreCase));
+
+        foreach (var tag in overview.Tags)
+        {
+            if (!TryGetDashboardTemplateField(tag, out var faceplateIndex, out var fieldKey))
+            {
+                continue;
+            }
+
+            if (!indexSet.Contains(faceplateIndex) || !DashboardFieldKeys.Contains(fieldKey))
+            {
+                continue;
+            }
+
+            tagMapByFaceplate[faceplateIndex][fieldKey] = tag;
+        }
 
         foreach (var faceplateIndex in FaceplateIndexes)
         {
-            var faceplateTags = overview.Tags
-                .Where(tag =>
-                {
-                    var displayName = GetDisplayName(tag.NodeId);
-                    return displayName.StartsWith($"HMI_DB.HMI_Faceplates[{faceplateIndex}].", StringComparison.OrdinalIgnoreCase)
-                        || displayName.StartsWith($"HMI_DB.Faceplates[{faceplateIndex}].", StringComparison.OrdinalIgnoreCase)
-                        || displayName.Equals($"HMI_DB.barcode[{faceplateIndex}]", StringComparison.OrdinalIgnoreCase);
-                })
+            var faceplateTagMap = tagMapByFaceplate[faceplateIndex];
+            var faceplateTags = faceplateTagMap.Values
+                .GroupBy(tag => tag.Id)
+                .Select(group => group.First())
                 .ToArray();
 
             if (faceplateTags.Length == 0)
             {
                 // Keep timeline aligned with dashboard fallback: no matching tags => disconnected.
-                yield return new FaceplateBoardState(faceplateIndex, $"宸ヤ綅{faceplateIndex}", EfficiencyStateKind.Disconnected);
+                yield return new FaceplateBoardState(faceplateIndex, $"工位{faceplateIndex}", EfficiencyStateKind.Disconnected);
                 continue;
             }
 
-            var stationNumber = ReadNumericValue(faceplateTags, faceplateIndex, snapshotByTagId, "stationnumber");
-            var workflow = ReadNumericValue(faceplateTags, faceplateIndex, snapshotByTagId, "workflow");
-            var errCode = ReadNumericValue(faceplateTags, faceplateIndex, snapshotByTagId, "errcode");
+            var stationNumber = ReadNumericValue(faceplateTagMap, snapshotByTagId, "stationnumber");
+            var workflow = ReadNumericValue(faceplateTagMap, snapshotByTagId, "workflow");
+            var errCode = ReadNumericValue(faceplateTagMap, snapshotByTagId, "errcode");
             var hasConnectedDevice = faceplateTags.Any(tag =>
                 deviceStatusById.TryGetValue(tag.DeviceId, out var status) && string.Equals(status, "connected", StringComparison.OrdinalIgnoreCase));
             var hasGoodSnapshot = faceplateTags.Any(tag =>
-                snapshotByTagId.TryGetValue(tag.Id, out var snapshot) && IsOpcUaSnapshotOk(snapshot));
+            {
+                if (!snapshotByTagId.TryGetValue(tag.Id, out var snapshot))
+                {
+                    return false;
+                }
+
+                var status = deviceStatusById.TryGetValue(tag.DeviceId, out var deviceStatus)
+                    ? deviceStatus
+                    : string.Empty;
+                return IsHealthySnapshot(snapshot, status);
+            });
             var hasDeviceDisconnecting = faceplateTags
                 .Select(tag => deviceStatusById.TryGetValue(tag.DeviceId, out var status) ? status : string.Empty)
                 .Where(value => !string.IsNullOrWhiteSpace(value))
@@ -377,26 +430,106 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
         return ToNumericValue(snapshot.Value);
     }
 
+    private static double? ReadNumericValue(
+        IReadOnlyDictionary<string, TagDefinitionDto> faceplateTagMap,
+        IReadOnlyDictionary<Guid, TagSnapshotDto> snapshotByTagId,
+        string key)
+    {
+        if (!faceplateTagMap.TryGetValue(key, out var tag) || !snapshotByTagId.TryGetValue(tag.Id, out var snapshot))
+        {
+            return null;
+        }
+
+        return ToNumericValue(snapshot.Value);
+    }
+
     private static string ShortLabelForFaceplate(TagDefinitionDto tag, int faceplateIndex)
     {
-        var displayName = GetDisplayName(tag.NodeId);
+        var candidates = GetTagNameCandidates(tag);
         var prefixes = new[]
         {
             $"HMI_DB.HMI_Faceplates[{faceplateIndex}].",
             $"HMI_DB.Faceplates[{faceplateIndex}].",
         };
 
-        foreach (var prefix in prefixes)
+        foreach (var displayName in candidates)
         {
-            if (displayName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            foreach (var prefix in prefixes)
             {
-                return displayName[prefix.Length..];
+                if (displayName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    return displayName[prefix.Length..];
+                }
+            }
+
+            if (displayName.Equals($"HMI_DB.barcode[{faceplateIndex}]", StringComparison.OrdinalIgnoreCase))
+            {
+                return "barcode";
             }
         }
 
-        return displayName.Equals($"HMI_DB.barcode[{faceplateIndex}]", StringComparison.OrdinalIgnoreCase)
-            ? "barcode"
-            : displayName;
+        return candidates.FirstOrDefault() ?? GetDisplayName(tag.NodeId);
+    }
+
+    private static IReadOnlyList<string> GetTagNameCandidates(TagDefinitionDto tag)
+    {
+        return new[]
+            {
+                tag.DisplayName,
+                tag.BrowseName,
+                GetDisplayName(tag.NodeId),
+            }
+            .Select(item => item?.Trim() ?? string.Empty)
+            .Where(item => !string.IsNullOrWhiteSpace(item))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool TryGetDashboardTemplateField(TagDefinitionDto tag, out int faceplateIndex, out string fieldKey)
+    {
+        faceplateIndex = 0;
+        fieldKey = string.Empty;
+
+        var candidates = GetTagNameCandidates(tag);
+        foreach (var displayName in candidates)
+        {
+            if (TryParseDashboardFieldFromName(displayName, out faceplateIndex, out fieldKey))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryParseDashboardFieldFromName(string rawValue, out int faceplateIndex, out string fieldKey)
+    {
+        faceplateIndex = 0;
+        fieldKey = string.Empty;
+
+        var value = rawValue.Trim();
+        if (value.Length == 0)
+        {
+            return false;
+        }
+
+        var barcodeMatch = System.Text.RegularExpressions.Regex.Match(value, @"^HMI_DB\.barcode\[(\d+)\]$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (barcodeMatch.Success)
+        {
+            faceplateIndex = int.Parse(barcodeMatch.Groups[1].Value);
+            fieldKey = "barcode";
+            return true;
+        }
+
+        var faceplateMatch = System.Text.RegularExpressions.Regex.Match(value, @"^HMI_DB\.(?:HMI_Faceplates|Faceplates)\[(\d+)\]\.([a-z0-9_]+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (!faceplateMatch.Success)
+        {
+            return false;
+        }
+
+        faceplateIndex = int.Parse(faceplateMatch.Groups[1].Value);
+        fieldKey = faceplateMatch.Groups[2].Value.ToLowerInvariant();
+        return true;
     }
 
     private static string GetDisplayName(string nodeId)
@@ -422,13 +555,24 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
         return string.IsNullOrWhiteSpace(value) ? nodeId : value;
     }
 
-    private static bool IsOpcUaSnapshotOk(TagSnapshotDto snapshot)
+    private static bool IsSnapshotOk(TagSnapshotDto snapshot)
     {
         var quality = (snapshot.Quality ?? string.Empty).Trim().ToLowerInvariant();
         var connectionState = (snapshot.ConnectionState ?? string.Empty).Trim().ToLowerInvariant();
         var qualityOk = quality is "" or "good" or "0" or "00000000" or "0000000";
-        var connectionOk = connectionState is "" or "connected";
+        var connectionOk = connectionState is "" or "connected" or "localstatic";
         return qualityOk && connectionOk;
+    }
+
+    private static bool IsHealthySnapshot(TagSnapshotDto snapshot, string? deviceStatus)
+    {
+        var normalizedDeviceStatus = (deviceStatus ?? string.Empty).Trim().ToLowerInvariant();
+        if (normalizedDeviceStatus.Length > 0 && !string.Equals(normalizedDeviceStatus, "connected", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return IsSnapshotOk(snapshot);
     }
 
     private static double? ToNumericValue(object? value)

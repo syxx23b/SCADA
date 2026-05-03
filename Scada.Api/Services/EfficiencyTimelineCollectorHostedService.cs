@@ -2,7 +2,7 @@ namespace Scada.Api.Services;
 
 public sealed class EfficiencyTimelineCollectorHostedService : BackgroundService
 {
-    private static readonly TimeSpan CaptureInterval = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan CaptureInterval = TimeSpan.FromSeconds(5);
 
     private readonly IEfficiencyAnalysisService _efficiencyAnalysisService;
     private readonly ILogger<EfficiencyTimelineCollectorHostedService> _logger;

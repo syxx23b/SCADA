@@ -5,11 +5,23 @@ import type {
   EfficiencyTimelineLane,
   EfficiencyTimelineResponse,
   EfficiencyTimelineSegment,
+  SiemensDbImportPreview,
   RuntimeOverview,
+  TagExcelReplaceResult,
   TagDefinition,
   TagFormState,
   ProductionByGwResponse,
-  FaultByGwResponse
+  FaultByGwResponse,
+  ReworkLookupResponse,
+  ReworkHistoryResponse,
+  RepairRecordConfirmRequest,
+  RepairRecordConfirmResponse,
+  RepairRecordDailyResponse,
+  RepairRecordListResponse,
+  ReworkConfigGraphResponse,
+  ReworkConfigEntriesResponse,
+  ReworkMeasureNode,
+  ReworkMappingEdge,
 } from './types'
 
 
@@ -53,6 +65,12 @@ export function updateDevice(id: string, payload: DeviceFormState) {
   })
 }
 
+export function deleteDevice(id: string) {
+  return request<void>(`/api/devices/${id}`, {
+    method: 'DELETE',
+  })
+}
+
 export function connectDevice(id: string) {
   return request<DeviceConnection>(`/api/devices/${id}/connect`, {
     method: 'POST',
@@ -70,8 +88,58 @@ export function browseDevice(deviceId: string, nodeId?: string) {
   return request<BrowseNode[]>(`/api/devices/${deviceId}/browse${query}`)
 }
 
+export async function importSiemensDbFile(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch('/api/tags/import/siemens-db', {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(message || `Request failed with status ${response.status}`)
+  }
+
+  return (await response.json()) as SiemensDbImportPreview
+}
+
 export function getTags() {
   return request<TagDefinition[]>('/api/tags')
+}
+
+export async function exportAllTagsExcel() {
+  const response = await fetch('/api/tags/export/excel')
+  if (!response.ok) {
+    const message = await response.text()
+    throw new Error(message || `Request failed with status ${response.status}`)
+  }
+
+  return response.blob()
+}
+
+export async function importTagsExcelReplace(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  const response = await fetch('/api/tags/import/excel-replace', {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const contentType = response.headers.get('content-type') ?? ''
+    if (contentType.includes('application/json')) {
+      const result = (await response.json()) as TagExcelReplaceResult
+      throw new Error(result.errors?.join('\n') || `Request failed with status ${response.status}`)
+    }
+
+    const message = await response.text()
+    throw new Error(message || `Request failed with status ${response.status}`)
+  }
+
+  return (await response.json()) as TagExcelReplaceResult
 }
 
 export function createTag(payload: TagFormState) {
@@ -102,6 +170,40 @@ export interface WriteOperationResult {
 }
 
 export async function writeTag(tagId: string, value: string) {
+  const controller = new AbortController()
+  const timeoutMs = 2500
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  try {
+    const response = await fetch(`/api/tags/${tagId}/write`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ value }),
+      signal: controller.signal,
+    })
+
+    if (!response.ok) {
+      const message = await response.text()
+      throw new Error(message || `Request failed with status ${response.status}`)
+    }
+
+    const writeResult = (await response.json()) as WriteOperationResult
+    if (!writeResult.succeeded) {
+      throw new Error(writeResult.message || `写入失败 (${writeResult.statusCode || 'Unknown'})`)
+    }
+
+    return writeResult
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`写入超时(>${timeoutMs}ms)`)
+    }
+    throw error
+  } finally {
+    window.clearTimeout(timer)
+  }
+
   const result = await request<WriteOperationResult>(`/api/tags/${tagId}/write`, {
     method: 'POST',
     body: JSON.stringify({ value }),
@@ -113,7 +215,6 @@ export async function writeTag(tagId: string, value: string) {
 
   return result
 }
-
 
 export function getRuntimeOverview() {
   return request<RuntimeOverview>('/api/runtime/overview')
@@ -129,6 +230,76 @@ export function getProductionTodayByGw() {
 
 export function getFaultTodayByGw() {
   return request<FaultByGwResponse>('/api/production/fault-today-gw')
+}
+
+export function getLatestReworkByTm(tm: string) {
+  return request<ReworkLookupResponse>(`/api/production/rework-latest?tm=${encodeURIComponent(tm)}`)
+}
+
+export function getReworkHistoryByTm(tm: string) {
+  return request<ReworkHistoryResponse>(`/api/production/rework-history?tm=${encodeURIComponent(tm)}`)
+}
+
+export function confirmRepairRecord(payload: RepairRecordConfirmRequest) {
+  return request<RepairRecordConfirmResponse>('/api/production/repair-records/confirm', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export function getRepairRecords(from: string, to: string) {
+  return request<RepairRecordListResponse>(`/api/production/repair-records?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`)
+}
+
+export function getRepairRecordDaily(months = 12) {
+  return request<RepairRecordDailyResponse>(`/api/production/repair-records/daily?months=${months}`)
+}
+
+export function getReworkConfigGraph() {
+  return request<ReworkConfigGraphResponse>('/api/rework-config/graph')
+}
+
+export function getReworkConfigEntries(err: number) {
+  return request<ReworkConfigEntriesResponse>(`/api/rework-config/entries/${encodeURIComponent(String(err))}`)
+}
+
+export function createReworkSuggestion(err: number, itemContent: string) {
+  return request('/api/rework-config/suggestions', {
+    method: 'POST',
+    body: JSON.stringify({ err, itemContent }),
+  })
+}
+
+export function deleteReworkSuggestion(id: number) {
+  return request<void>(`/api/rework-config/suggestions/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function createReworkMeasure(itemContent: string) {
+  return request<ReworkMeasureNode>('/api/rework-config/measures', {
+    method: 'POST',
+    body: JSON.stringify({ itemContent }),
+  })
+}
+
+export function deleteReworkMeasure(id: number) {
+  return request<void>(`/api/rework-config/measures/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+export function createReworkMapping(err: number, knowledgeId: number) {
+  return request<ReworkMappingEdge>('/api/rework-config/mappings', {
+    method: 'POST',
+    body: JSON.stringify({ err, knowledgeId }),
+  })
+}
+
+export function deleteReworkMapping(id: number) {
+  return request<void>(`/api/rework-config/mappings/${id}`, {
+    method: 'DELETE',
+  })
 }
 
 
@@ -503,6 +674,34 @@ export interface RecipeDetail extends Recipe {
   items: Record<string, string>
 }
 
+export interface RecipeSyncPairRequest {
+  sourceTagId: string
+  targetTagId: string
+  source: string
+  target: string
+  fieldKey?: string | null
+}
+
+export interface RecipeSyncRequest {
+  recipeType: string
+  recipeIndex: number
+  pairs: RecipeSyncPairRequest[]
+}
+
+export interface RecipeSyncIssue {
+  target: string
+  source: string
+  value: string
+  reason: string
+}
+
+export interface RecipeSyncResponse {
+  succeeded: number
+  failed: number
+  skipped: number
+  issues: RecipeSyncIssue[]
+}
+
 export function getRecipes(type?: string) {
   const query = type ? `?type=${encodeURIComponent(type)}` : ''
   return request<Recipe[]>(`/api/recipes${query}`)
@@ -529,5 +728,12 @@ export function updateRecipe(id: string, payload: { name: string; description: s
 export function deleteRecipe(id: string) {
   return request<void>(`/api/recipes/${id}`, {
     method: 'DELETE',
+  })
+}
+
+export function syncRecipe(payload: RecipeSyncRequest) {
+  return request<RecipeSyncResponse>('/api/recipes/sync', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   })
 }

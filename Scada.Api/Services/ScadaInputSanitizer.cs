@@ -1,24 +1,33 @@
 using System.Text.RegularExpressions;
+using Scada.Api.Domain;
 using Scada.Api.Dtos;
 
 namespace Scada.Api.Services;
 
 public static class ScadaInputSanitizer
 {
-    private static readonly Regex RecipePattern = new(@"^Recipe_DB\.(?:DJRecipe|QYJRecipe|QYIRecipe)(?:\[(\d+)\]|(\d+))?(?:\.|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex RecipePattern = new(@"^Recipe_DB\.(?:DJRecipe|QYJRecipe)(?:\[(\d+)\]|(\d+))?(?:\.|$)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex LocalRecipeNameLegacyPattern = new(@"^Local\.Recipe_DB\.RecipeName(\[(\d+)\])$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex LocalRecipeNameLegacyUnderscorePattern = new(@"^Local\.Recipe_DB_RecipeName(\[(\d+)\])$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex LocalRecipeDjLegacyPattern = new(@"^Local\.Recipe_DB\.DJRecipe(?:\[(\d+)\])?\.(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex LocalRecipeDjLegacyUnderscorePattern = new(@"^Local\.Recipe_DB_DJRecipe(?:\[(\d+)\])?_(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex LocalRecipeQyjLegacyPattern = new(@"^Local\.Recipe_DB\.(?:QYJRecipe|QYIRecipe)(?:\[(\d+)\])?\.(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex LocalRecipeQyjLegacyUnderscorePattern = new(@"^Local\.Recipe_DB_(?:QYJRecipe|QYIRecipe)(?:\[(\d+)\])?_(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LocalRecipeQyjLegacyPattern = new(@"^Local\.Recipe_DB\.QYJRecipe(?:\[(\d+)\])?\.(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LocalRecipeQyjLegacyUnderscorePattern = new(@"^Local\.Recipe_DB_QYJRecipe(?:\[(\d+)\])?_(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex LocalPlainPattern = new(@"^Local\.([^.]+)(?:\.[^.]+)*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
 
     public static SanitizedDevicePayload NormalizeDevice(UpsertDeviceRequest request)
     {
         var name = request.Name.Trim();
-        var endpointUrl = request.EndpointUrl.Trim();
+        var requestedDriverKind = request.DriverKind?.Trim();
+        var driverKind = string.Equals(requestedDriverKind, "SiemensS7", StringComparison.OrdinalIgnoreCase)
+            ? DeviceDriverKind.SiemensS7
+            : string.Equals(requestedDriverKind, "Local", StringComparison.OrdinalIgnoreCase)
+                ? DeviceDriverKind.Local
+                : DeviceDriverKind.OpcUa;
+        var endpointUrl = string.IsNullOrWhiteSpace(request.EndpointUrl)
+            ? (driverKind == DeviceDriverKind.Local ? "local://static" : string.Empty)
+            : request.EndpointUrl.Trim();
         var securityMode = string.IsNullOrWhiteSpace(request.SecurityMode) ? "None" : request.SecurityMode.Trim();
         var securityPolicy = string.IsNullOrWhiteSpace(request.SecurityPolicy) ? "None" : request.SecurityPolicy.Trim();
         var authMode = string.Equals(request.AuthMode?.Trim(), "UsernamePassword", StringComparison.OrdinalIgnoreCase)
@@ -36,13 +45,14 @@ public static class ScadaInputSanitizer
             throw new ArgumentException("Device name is required.");
         }
 
-        if (string.IsNullOrWhiteSpace(endpointUrl))
+        if (driverKind != DeviceDriverKind.Local && string.IsNullOrWhiteSpace(endpointUrl))
         {
             throw new ArgumentException("Endpoint URL is required.");
         }
 
         return new SanitizedDevicePayload(
             name,
+            driverKind,
             endpointUrl,
             securityMode,
             securityPolicy,
@@ -119,9 +129,8 @@ public static class ScadaInputSanitizer
     {
         if (IsRecipeGroup(groupKey, out var groupRecipeIndex))
         {
-            groupKey = $"Device1_Recipe{groupRecipeIndex}";
-            samplingIntervalMs = 1000;
-            publishingIntervalMs = 1000;
+            samplingIntervalMs = 500;
+            publishingIntervalMs = 500;
             return;
         }
 
@@ -154,9 +163,12 @@ public static class ScadaInputSanitizer
         }
 
         recipeIndex = recipeIndex == 2 ? 2 : 1;
-        groupKey = $"Device1_Recipe{recipeIndex}";
-        samplingIntervalMs = 1000;
-        publishingIntervalMs = 1000;
+        if (groupKey is not null && TryResolveRecipeGroupPrefix(groupKey, out var recipeGroupPrefix))
+        {
+            groupKey = $"{recipeGroupPrefix}_Recipe{recipeIndex}";
+        }
+        samplingIntervalMs = 500;
+        publishingIntervalMs = 500;
     }
 
     private static bool IsRecipeGroup(string? groupKey, out int recipeIndex)
@@ -168,19 +180,27 @@ public static class ScadaInputSanitizer
         }
 
         var normalized = groupKey.Trim();
-        if (normalized.Equals("Device1_Recipe1", StringComparison.OrdinalIgnoreCase))
+        if (TryResolveRecipeGroupPrefix(normalized, out _))
         {
-            recipeIndex = 1;
-            return true;
-        }
-
-        if (normalized.Equals("Device1_Recipe2", StringComparison.OrdinalIgnoreCase))
-        {
-            recipeIndex = 2;
+            recipeIndex = normalized.EndsWith("Recipe2", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
             return true;
         }
 
         return false;
+    }
+
+    private static bool TryResolveRecipeGroupPrefix(string groupKey, out string prefix)
+    {
+        prefix = string.Empty;
+        var normalized = groupKey.Trim();
+        var match = Regex.Match(normalized, @"^(?<prefix>.+)_Recipe(?<index>[12])$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        if (!match.Success)
+        {
+            return false;
+        }
+
+        prefix = match.Groups["prefix"].Value.Trim();
+        return !string.IsNullOrWhiteSpace(prefix);
     }
 
     private static bool IsLocalVariableGroup(string? groupKey)
@@ -239,7 +259,7 @@ public static class ScadaInputSanitizer
             return $"Local.RecipeDJ.{djUnderscoreMatch.Groups[2].Value.Trim()}";
         }
 
-        // QYJ/QYI Recipe patterns (dot and underscore versions)
+        // QYJ Recipe patterns (dot and underscore versions)
         var qyjMatch = LocalRecipeQyjLegacyPattern.Match(trimmed);
         if (qyjMatch.Success)
         {
@@ -287,6 +307,7 @@ public static class ScadaInputSanitizer
 
 public sealed record SanitizedDevicePayload(
     string Name,
+    DeviceDriverKind DriverKind,
     string EndpointUrl,
     string SecurityMode,
     string SecurityPolicy,

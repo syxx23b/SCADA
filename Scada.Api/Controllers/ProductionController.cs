@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.SqlClient;
+using Scada.Api.Services;
 using System.Globalization;
 
 namespace Scada.Api.Controllers;
@@ -35,9 +36,11 @@ public sealed class ProductionController : ControllerBase
         var buckets = new List<ProductionByGwBucketDto>();
         var dailyLast30Years = new List<ProductionByDateBucketDto>();
         var monthlyLast12Months = new List<ProductionByMonthBucketDto>();
+        var annualCurrentYearDaily = new List<ProductionByDateBucketDto>();
 
         try
         {
+            await ReworkConfigSchemaInitializer.EnsureInitializedAsync(_connectionString, cancellationToken);
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync(cancellationToken);
 
@@ -95,6 +98,28 @@ public sealed class ProductionController : ControllerBase
                     monthlyLast12Months.Add(new ProductionByMonthBucketDto(month, count));
                 }
             }
+
+            const string annualDailySql = """
+                SELECT CONVERT(char(10), CAST(sj AS date), 23) AS [DayKey], COUNT_BIG(1) AS Cnt
+                FROM dbo.Record
+                WHERE mode = 0
+                  AND gw > 0
+                  AND sj >= DATEFROMPARTS(YEAR(GETDATE()), 1, 1)
+                  AND sj < DATEADD(year, 1, DATEFROMPARTS(YEAR(GETDATE()), 1, 1))
+                GROUP BY CAST(sj AS date)
+                ORDER BY CAST(sj AS date) ASC;
+                """;
+
+            await using (var annualDailyCommand = new SqlCommand(annualDailySql, connection))
+            {
+                await using var reader = await annualDailyCommand.ExecuteReaderAsync(cancellationToken);
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var date = reader.GetString(0);
+                    var count = Convert.ToInt32(reader.GetInt64(1));
+                    annualCurrentYearDaily.Add(new ProductionByDateBucketDto(date, count));
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -109,6 +134,7 @@ public sealed class ProductionController : ControllerBase
             buckets,
             dailyLast30Years,
             monthlyLast12Months,
+            annualCurrentYearDaily,
             now.ToString("O"));
 
         return Ok(response);
@@ -161,8 +187,16 @@ public sealed class ProductionController : ControllerBase
             ORDER BY CAST(sj AS date) DESC;
             """;
 
+        const string quarterErrorDefinitionSql = """
+            SELECT ERR, ERRinformation
+            FROM ErrRepaire.ErrorDefine
+            WHERE ERR > 0
+            ORDER BY ERR ASC;
+            """;
+
         var faultBuckets = new List<ProductionByGwBucketDto>();
         var qualifiedBuckets = new List<ProductionByGwBucketDto>();
+        var quarterErrorDefinitions = new List<FaultErrorDefinitionDto>();
         var quarterErrorDetails = new List<FaultQuarterBucketDto>();
         var quarterQualifiedDetails = new List<ProductionByDateBucketDto>();
 
@@ -215,6 +249,19 @@ public sealed class ProductionController : ControllerBase
                     quarterQualifiedDetails.Add(new ProductionByDateBucketDto(date, count));
                 }
             }
+
+            await using (var quarterErrorDefinitionCommand = new SqlCommand(quarterErrorDefinitionSql, connection))
+            {
+                await using var quarterErrorDefinitionReader = await quarterErrorDefinitionCommand.ExecuteReaderAsync(cancellationToken);
+                while (await quarterErrorDefinitionReader.ReadAsync(cancellationToken))
+                {
+                    var err = Convert.ToInt32(quarterErrorDefinitionReader.GetValue(0));
+                    var information = quarterErrorDefinitionReader.IsDBNull(1)
+                        ? $"ERR{err}"
+                        : quarterErrorDefinitionReader.GetString(1);
+                    quarterErrorDefinitions.Add(new FaultErrorDefinitionDto(err, information));
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -229,11 +276,436 @@ public sealed class ProductionController : ControllerBase
             qualifiedBuckets.Sum(item => item.Count),
             faultBuckets,
             qualifiedBuckets,
+            quarterErrorDefinitions,
             quarterErrorDetails,
             quarterQualifiedDetails,
             now.ToString("O"));
 
         return Ok(response);
+    }
+
+    [HttpGet("rework-latest")]
+    public async Task<ActionResult<ReworkLookupResponseDto>> GetLatestReworkByTm(
+        [FromQuery] string? tm,
+        CancellationToken cancellationToken)
+    {
+        var normalizedTm = tm?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedTm))
+        {
+            return BadRequest(new { message = "请输入返修字符串" });
+        }
+
+        const string sql = """
+            SELECT TOP (1)
+                E.sj,
+                E.gw,
+                CONVERT(nvarchar(100), E.orderNo) AS OrderNo,
+                E.[ERR],
+                D.ERRinformation
+            FROM dbo.[Error] AS E
+            LEFT JOIN ErrRepaire.ErrorDefine AS D ON D.ERR = E.[ERR]
+            WHERE LTRIM(RTRIM(CONVERT(nvarchar(200), tm))) = @tm
+            ORDER BY
+                CASE WHEN E.sj IS NULL THEN 1 ELSE 0 END,
+                E.sj DESC,
+                E.ID DESC;
+            """;
+
+        const string suggestionSql = """
+            SELECT ItemContent
+            FROM ErrRepaire.ErrReworkSuggestion
+            WHERE ERR = @err
+            ORDER BY SortOrder ASC, ID ASC;
+            """;
+
+        const string measureSql = """
+            SELECT K.ItemContent
+            FROM ErrRepaire.ErrKnowledgeMap AS M
+            INNER JOIN ErrRepaire.ReworkKnowledgeItem AS K ON K.ID = M.KnowledgeID
+            WHERE M.ERR = @err
+              AND K.ItemType = 2
+            ORDER BY M.SortOrder ASC, M.ID ASC;
+            """;
+
+        try
+        {
+            await ReworkConfigSchemaInitializer.EnsureInitializedAsync(_connectionString, cancellationToken);
+
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@tm", normalizedTm);
+            string? sj;
+            int? gw;
+            string? orderNo;
+            int? err;
+            string? errInformation;
+
+            await using (var reader = await command.ExecuteReaderAsync(cancellationToken))
+            {
+                if (!await reader.ReadAsync(cancellationToken))
+                {
+                    return Ok(new ReworkLookupResponseDto(
+                        normalizedTm,
+                        false,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        [],
+                        []));
+                }
+
+                sj = reader.IsDBNull(0)
+                    ? null
+                    : reader.GetDateTime(0).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+                gw = reader.IsDBNull(1) ? null : reader.GetInt32(1);
+                orderNo = reader.IsDBNull(2) ? null : reader.GetString(2);
+                err = reader.IsDBNull(3) ? null : Convert.ToInt32(reader.GetValue(3), CultureInfo.InvariantCulture);
+                errInformation = reader.IsDBNull(4) ? null : reader.GetString(4);
+            }
+
+            var reworkSuggestions = new List<string>();
+            var repairMeasures = new List<string>();
+
+            if (err.HasValue && err.Value > 0)
+            {
+                await using var suggestionCommand = new SqlCommand(suggestionSql, connection);
+                suggestionCommand.Parameters.AddWithValue("@err", err.Value);
+                await using (var suggestionReader = await suggestionCommand.ExecuteReaderAsync(cancellationToken))
+                {
+                    while (await suggestionReader.ReadAsync(cancellationToken))
+                    {
+                        var content = suggestionReader.IsDBNull(0) ? string.Empty : suggestionReader.GetString(0).Trim();
+                        if (string.IsNullOrWhiteSpace(content)) continue;
+                        reworkSuggestions.Add(content);
+                    }
+                }
+
+                await using var measureCommand = new SqlCommand(measureSql, connection);
+                measureCommand.Parameters.AddWithValue("@err", err.Value);
+                await using (var measureReader = await measureCommand.ExecuteReaderAsync(cancellationToken))
+                {
+                    while (await measureReader.ReadAsync(cancellationToken))
+                    {
+                        var content = measureReader.IsDBNull(0) ? string.Empty : measureReader.GetString(0).Trim();
+                        if (string.IsNullOrWhiteSpace(content)) continue;
+                        repairMeasures.Add(content);
+                    }
+                }
+            }
+
+            return Ok(new ReworkLookupResponseDto(
+                normalizedTm,
+                true,
+                sj,
+                gw,
+                string.IsNullOrWhiteSpace(orderNo) ? null : orderNo.Trim(),
+                err,
+                string.IsNullOrWhiteSpace(errInformation) ? null : errInformation.Trim(),
+                reworkSuggestions,
+                repairMeasures));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query latest rework record by tm");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "返修记录查询失败" });
+        }
+    }
+
+    [HttpGet("rework-history")]
+    public async Task<ActionResult<ReworkHistoryResponseDto>> GetReworkHistoryByTm(
+        [FromQuery] string? tm,
+        CancellationToken cancellationToken)
+    {
+        var normalizedTm = tm?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedTm))
+        {
+            return BadRequest(new { message = "请输入返修字符串" });
+        }
+
+        const string errorSql = """
+            SELECT TOP (500)
+                E.sj,
+                E.gw,
+                CONVERT(nvarchar(100), E.orderNo) AS OrderNo,
+                E.[ERR],
+                ISNULL(D.ERRinformation, CONCAT('ERR ', CONVERT(varchar(16), E.[ERR]))) AS ErrInformation
+            FROM dbo.[Error] AS E
+            LEFT JOIN ErrRepaire.ErrorDefine AS D ON D.ERR = E.[ERR]
+            WHERE LTRIM(RTRIM(CONVERT(nvarchar(200), E.tm))) = @tm
+            ORDER BY E.sj DESC, E.ID DESC;
+            """;
+
+        const string repairSql = """
+            SELECT TOP (500)
+                R.ConfirmedAt,
+                R.RepairMeasure
+            FROM ErrRepaire.RepairRecord AS R
+            WHERE LTRIM(RTRIM(CONVERT(nvarchar(200), R.tm))) = @tm
+            ORDER BY R.ConfirmedAt DESC, R.ID DESC;
+            """;
+
+        var errorItems = new List<ReworkHistoryErrorItemDto>();
+        var repairItems = new List<ReworkHistoryRepairItemDto>();
+
+        try
+        {
+            await ReworkConfigSchemaInitializer.EnsureInitializedAsync(_connectionString, cancellationToken);
+            await EnsureRepairRecordTableAsync(cancellationToken);
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using (var errorCommand = new SqlCommand(errorSql, connection))
+            {
+                errorCommand.Parameters.AddWithValue("@tm", normalizedTm);
+                await using var errorReader = await errorCommand.ExecuteReaderAsync(cancellationToken);
+                while (await errorReader.ReadAsync(cancellationToken))
+                {
+                    errorItems.Add(new ReworkHistoryErrorItemDto(
+                        errorReader.IsDBNull(0) ? null : errorReader.GetDateTime(0).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                        errorReader.IsDBNull(1) ? null : errorReader.GetInt32(1),
+                        errorReader.IsDBNull(2) ? null : errorReader.GetString(2),
+                        errorReader.IsDBNull(3) ? null : Convert.ToInt32(errorReader.GetValue(3), CultureInfo.InvariantCulture),
+                        errorReader.IsDBNull(4) ? null : errorReader.GetString(4)));
+                }
+            }
+
+            await using (var repairCommand = new SqlCommand(repairSql, connection))
+            {
+                repairCommand.Parameters.AddWithValue("@tm", normalizedTm);
+                await using var repairReader = await repairCommand.ExecuteReaderAsync(cancellationToken);
+                while (await repairReader.ReadAsync(cancellationToken))
+                {
+                    repairItems.Add(new ReworkHistoryRepairItemDto(
+                        repairReader.GetDateTime(0).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                        repairReader.IsDBNull(1) ? string.Empty : repairReader.GetString(1)));
+                }
+            }
+
+            return Ok(new ReworkHistoryResponseDto(normalizedTm, errorItems, repairItems));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query rework history by tm");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "返修历史查询失败" });
+        }
+    }
+
+    [HttpPost("repair-records/confirm")]
+    public async Task<ActionResult<RepairRecordConfirmResponseDto>> ConfirmRepairRecord(
+        [FromBody] RepairRecordConfirmRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var tm = request.Tm?.Trim();
+        var repairMeasure = request.RepairMeasure?.Trim();
+
+        if (string.IsNullOrWhiteSpace(tm))
+        {
+            return BadRequest(new { message = "条码不能为空" });
+        }
+
+        if (string.IsNullOrWhiteSpace(repairMeasure))
+        {
+            return BadRequest(new { message = "请选择维修措施" });
+        }
+
+        if (!request.Err.HasValue || request.Err.Value <= 0)
+        {
+            return BadRequest(new { message = "ERR 无效" });
+        }
+
+        DateTime sj;
+        if (string.IsNullOrWhiteSpace(request.Sj)
+            || !DateTime.TryParse(request.Sj, CultureInfo.InvariantCulture, DateTimeStyles.AssumeLocal, out sj))
+        {
+            return BadRequest(new { message = "时间格式无效" });
+        }
+
+        const string sql = """
+            INSERT INTO ErrRepaire.RepairRecord
+                (sj, tm, err, RepairMeasure, gw, orderNo, ConfirmedAt)
+            OUTPUT INSERTED.ID, INSERTED.ConfirmedAt
+            VALUES
+                (@sj, @tm, @err, @repairMeasure, @gw, @orderNo, SYSDATETIME());
+            """;
+
+        try
+        {
+            await EnsureRepairRecordTableAsync(cancellationToken);
+
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@sj", sj);
+            command.Parameters.AddWithValue("@tm", tm);
+            command.Parameters.AddWithValue("@err", request.Err.Value);
+            command.Parameters.AddWithValue("@repairMeasure", repairMeasure);
+            command.Parameters.AddWithValue("@gw", request.Gw.HasValue ? request.Gw.Value : DBNull.Value);
+            command.Parameters.AddWithValue("@orderNo", string.IsNullOrWhiteSpace(request.OrderNo) ? DBNull.Value : request.OrderNo!.Trim());
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (await reader.ReadAsync(cancellationToken))
+            {
+                var id = reader.GetInt64(0);
+                var confirmedAt = reader.GetDateTime(1).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+                return Ok(new RepairRecordConfirmResponseDto(id, confirmedAt));
+            }
+
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "维修确认写入失败" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to insert RepairRecord");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "维修确认写入失败" });
+        }
+    }
+
+    [HttpGet("repair-records")]
+    public async Task<ActionResult<RepairRecordListResponseDto>> GetRepairRecords(
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        CancellationToken cancellationToken)
+    {
+        var toDate = (to ?? DateTime.Today).Date.AddDays(1).AddTicks(-1);
+        var fromDate = (from ?? toDate.AddDays(-30)).Date;
+        if (fromDate > toDate)
+        {
+            return BadRequest(new { message = "起始时间不能大于结束时间" });
+        }
+
+        const string sql = """
+            SELECT TOP (5000)
+                R.ID, R.sj, R.tm, R.err, ISNULL(D.ERRinformation, CONCAT('ERR ', CONVERT(varchar(16), R.err))) AS ErrInformation, R.RepairMeasure, R.gw, R.orderNo, R.ConfirmedAt
+            FROM ErrRepaire.RepairRecord AS R
+            LEFT JOIN ErrRepaire.ErrorDefine AS D ON D.ERR = R.err
+            WHERE ConfirmedAt >= @from
+              AND ConfirmedAt <= @to
+            ORDER BY R.ConfirmedAt DESC, R.ID DESC;
+            """;
+
+        var items = new List<RepairRecordItemDto>();
+        try
+        {
+            await ReworkConfigSchemaInitializer.EnsureInitializedAsync(_connectionString, cancellationToken);
+            await EnsureRepairRecordTableAsync(cancellationToken);
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@from", fromDate);
+            command.Parameters.AddWithValue("@to", toDate);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                items.Add(new RepairRecordItemDto(
+                    reader.GetInt64(0),
+                    reader.GetDateTime(1).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                    reader.GetString(2),
+                    Convert.ToInt32(reader.GetValue(3), CultureInfo.InvariantCulture),
+                    reader.IsDBNull(4) ? "-" : reader.GetString(4),
+                    reader.GetString(5),
+                    reader.IsDBNull(6) ? null : reader.GetInt32(6),
+                    reader.IsDBNull(7) ? null : reader.GetString(7),
+                    reader.GetDateTime(8).ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)));
+            }
+
+            return Ok(new RepairRecordListResponseDto(
+                fromDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                toDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                items));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query RepairRecord list");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "返修记录查询失败" });
+        }
+    }
+
+    [HttpGet("repair-records/daily")]
+    public async Task<ActionResult<RepairRecordDailyResponseDto>> GetRepairRecordDaily(
+        [FromQuery] int months = 12,
+        CancellationToken cancellationToken = default)
+    {
+        var safeMonths = Math.Clamp(months, 1, 24);
+        var startDate = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1).AddMonths(-(safeMonths - 1));
+        var endDate = DateTime.Today.AddDays(1).AddTicks(-1);
+
+        const string sql = """
+            SELECT CONVERT(char(10), CAST(ConfirmedAt AS date), 23) AS [DayKey], COUNT_BIG(1) AS Cnt
+            FROM ErrRepaire.RepairRecord
+            WHERE ConfirmedAt >= @from
+              AND ConfirmedAt <= @to
+            GROUP BY CAST(ConfirmedAt AS date)
+            ORDER BY CAST(ConfirmedAt AS date) ASC;
+            """;
+
+        var daily = new List<ProductionByDateBucketDto>();
+        try
+        {
+            await EnsureRepairRecordTableAsync(cancellationToken);
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+            await using var command = new SqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@from", startDate);
+            command.Parameters.AddWithValue("@to", endDate);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                daily.Add(new ProductionByDateBucketDto(reader.GetString(0), Convert.ToInt32(reader.GetInt64(1))));
+            }
+
+            return Ok(new RepairRecordDailyResponseDto(
+                startDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                endDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                safeMonths,
+                daily));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query RepairRecord daily stats");
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "返修记录统计失败" });
+        }
+    }
+
+    private async Task EnsureRepairRecordTableAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            IF SCHEMA_ID(N'ErrRepaire') IS NULL
+            BEGIN
+                EXEC(N'CREATE SCHEMA [ErrRepaire]');
+            END;
+
+            IF OBJECT_ID(N'[dbo].[RepairRecord]', N'U') IS NOT NULL
+               AND OBJECT_ID(N'[ErrRepaire].[RepairRecord]', N'U') IS NULL
+            BEGIN
+                EXEC(N'ALTER SCHEMA [ErrRepaire] TRANSFER [dbo].[RepairRecord]');
+            END;
+
+            IF OBJECT_ID(N'ErrRepaire.RepairRecord', N'U') IS NULL
+            BEGIN
+                CREATE TABLE ErrRepaire.RepairRecord
+                (
+                    ID BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
+                    sj DATETIME2(0) NOT NULL,
+                    tm NVARCHAR(200) NOT NULL,
+                    err INT NOT NULL,
+                    RepairMeasure NVARCHAR(500) NOT NULL,
+                    gw INT NULL,
+                    orderNo NVARCHAR(100) NULL,
+                    ConfirmedAt DATETIME2(0) NOT NULL CONSTRAINT DF_RepairRecord_ConfirmedAt DEFAULT(SYSDATETIME())
+                );
+
+                CREATE INDEX IX_RepairRecord_tm ON ErrRepaire.RepairRecord(tm);
+                CREATE INDEX IX_RepairRecord_sj ON ErrRepaire.RepairRecord(sj DESC);
+            END;
+            """;
+
+        await using var connection = new SqlConnection(_connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new SqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     [HttpGet("factory-test-report")]
@@ -365,6 +837,7 @@ public sealed record ProductionByGwResponseDto(
     IReadOnlyList<ProductionByGwBucketDto> Buckets,
     IReadOnlyList<ProductionByDateBucketDto> DailyLast30Years,
     IReadOnlyList<ProductionByMonthBucketDto> MonthlyLast12Months,
+    IReadOnlyList<ProductionByDateBucketDto> AnnualCurrentYearDaily,
     string GeneratedAt);
 
 public sealed record FaultByGwResponseDto(
@@ -373,14 +846,80 @@ public sealed record FaultByGwResponseDto(
     int TotalQualifiedCount,
     IReadOnlyList<ProductionByGwBucketDto> FaultBuckets,
     IReadOnlyList<ProductionByGwBucketDto> QualifiedBuckets,
+    IReadOnlyList<FaultErrorDefinitionDto> QuarterErrorDefinitions,
     IReadOnlyList<FaultQuarterBucketDto> QuarterErrorDetails,
     IReadOnlyList<ProductionByDateBucketDto> QuarterQualifiedDetails,
     string GeneratedAt);
+
+public sealed record FaultErrorDefinitionDto(
+    int Err,
+    string Information);
 
 public sealed record FaultQuarterBucketDto(
     string Date,
     int Err,
     int Count);
+
+public sealed record ReworkLookupResponseDto(
+    string Tm,
+    bool Found,
+    string? Sj,
+    int? Gw,
+    string? OrderNo,
+    int? Err,
+    string? ErrInformation,
+    IReadOnlyList<string> ReworkSuggestions,
+    IReadOnlyList<string> RepairMeasures);
+
+public sealed record ReworkHistoryErrorItemDto(
+    string? Sj,
+    int? Gw,
+    string? OrderNo,
+    int? Err,
+    string? ErrInformation);
+
+public sealed record ReworkHistoryRepairItemDto(
+    string ConfirmedAt,
+    string RepairMeasure);
+
+public sealed record ReworkHistoryResponseDto(
+    string Tm,
+    IReadOnlyList<ReworkHistoryErrorItemDto> ErrorItems,
+    IReadOnlyList<ReworkHistoryRepairItemDto> RepairItems);
+
+public sealed record RepairRecordConfirmRequestDto(
+    string? Tm,
+    string? Sj,
+    int? Gw,
+    string? OrderNo,
+    int? Err,
+    string? RepairMeasure);
+
+public sealed record RepairRecordConfirmResponseDto(
+    long Id,
+    string ConfirmedAt);
+
+public sealed record RepairRecordItemDto(
+    long Id,
+    string Sj,
+    string Tm,
+    int Err,
+    string ErrInformation,
+    string RepairMeasure,
+    int? Gw,
+    string? OrderNo,
+    string ConfirmedAt);
+
+public sealed record RepairRecordListResponseDto(
+    string From,
+    string To,
+    IReadOnlyList<RepairRecordItemDto> Items);
+
+public sealed record RepairRecordDailyResponseDto(
+    string From,
+    string To,
+    int Months,
+    IReadOnlyList<ProductionByDateBucketDto> Daily);
 
 public sealed record FactoryTestReportResponseDto(
     string From,

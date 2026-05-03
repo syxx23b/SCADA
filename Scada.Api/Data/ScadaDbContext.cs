@@ -18,17 +18,14 @@ public sealed class ScadaDbContext : DbContext
 
     public DbSet<EfficiencyTimelineSegmentEntity> EfficiencyTimelineSegments => Set<EfficiencyTimelineSegmentEntity>();
 
-    public DbSet<RecipeEntity> Recipes => Set<RecipeEntity>();
-
-
-    public DbSet<RecipeItemEntity> RecipeItems => Set<RecipeItemEntity>();
-
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DeviceConnectionEntity>(entity =>
         {
+            entity.ToTable("Devices", "Tag");
             entity.HasKey(item => item.Id);
             entity.Property(item => item.Name).HasMaxLength(120).IsRequired();
+            entity.Property(item => item.DriverKind).HasConversion<string>().HasMaxLength(32).IsRequired();
             entity.Property(item => item.EndpointUrl).HasMaxLength(256).IsRequired();
             entity.Property(item => item.SecurityMode).HasMaxLength(32).IsRequired();
             entity.Property(item => item.SecurityPolicy).HasMaxLength(64).IsRequired();
@@ -42,6 +39,7 @@ public sealed class ScadaDbContext : DbContext
 
         modelBuilder.Entity<TagDefinitionEntity>(entity =>
         {
+            entity.ToTable("Tags", "Tag");
             entity.HasKey(item => item.Id);
             entity.Property(item => item.NodeId).HasMaxLength(256).IsRequired();
             entity.Property(item => item.BrowseName).HasMaxLength(128).IsRequired();
@@ -53,6 +51,7 @@ public sealed class ScadaDbContext : DbContext
 
         modelBuilder.Entity<WriteAuditEntity>(entity =>
         {
+            entity.ToTable("WriteAudits", "Process");
             entity.HasKey(item => item.Id);
             entity.Property(item => item.OperationKind).HasMaxLength(32).IsRequired();
             entity.Property(item => item.RequestedValue).HasMaxLength(4000).IsRequired();
@@ -63,33 +62,12 @@ public sealed class ScadaDbContext : DbContext
 
         modelBuilder.Entity<EfficiencyTimelineSegmentEntity>(entity =>
         {
+            entity.ToTable("EfficiencyTimelineSegments", "OEE");
             entity.HasKey(item => item.Id);
             entity.Property(item => item.StationName).HasMaxLength(120).IsRequired();
             entity.Property(item => item.State).HasConversion<string>().HasMaxLength(24).IsRequired();
             entity.HasIndex(item => new { item.FaceplateIndex, item.StartedAt });
             entity.HasIndex(item => new { item.FaceplateIndex, item.EndedAt });
-        });
-
-        modelBuilder.Entity<RecipeEntity>(entity =>
-
-        {
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.Name).HasMaxLength(200).IsRequired();
-            entity.Property(item => item.Description).HasMaxLength(500);
-            entity.Property(item => item.RecipeType).HasMaxLength(32).IsRequired();
-            entity.HasIndex(item => item.RecipeType);
-            entity.HasMany(item => item.Items)
-                .WithOne(item => item.Recipe)
-                .HasForeignKey(item => item.RecipeId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
-
-        modelBuilder.Entity<RecipeItemEntity>(entity =>
-        {
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.FieldKey).HasMaxLength(128).IsRequired();
-            entity.Property(item => item.Value).HasMaxLength(4000).IsRequired();
-            entity.HasIndex(item => new { item.RecipeId, item.FieldKey });
         });
     }
 }

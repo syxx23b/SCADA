@@ -6,6 +6,7 @@ namespace Scada.Api.Dtos;
 public sealed record DeviceConnectionDto(
     Guid Id,
     string Name,
+    string DriverKind,
     string EndpointUrl,
     string SecurityMode,
     string SecurityPolicy,
@@ -17,6 +18,7 @@ public sealed record DeviceConnectionDto(
 
 public sealed record UpsertDeviceRequest(
     string Name,
+    string? DriverKind,
     string EndpointUrl,
     string? SecurityMode,
     string? SecurityPolicy,
@@ -115,6 +117,26 @@ public sealed record TagImportResultDto(
     int Failed,
     List<string> Errors);
 
+public sealed record TagExcelReplaceResultDto(
+    int Total,
+    int Created,
+    int Removed,
+    List<string> Errors);
+
+public sealed record SiemensDbImportTagDto(
+    string NodeId,
+    string BrowseName,
+    string DisplayName,
+    string DataType,
+    string GroupKey,
+    bool AllowWrite);
+
+public sealed record SiemensDbImportPreviewDto(
+    string BlockName,
+    int Total,
+    IReadOnlyList<SiemensDbImportTagDto> Tags,
+    IReadOnlyList<string> Warnings);
+
 // 配方相关 DTO
 public sealed record RecipeDto(
     Guid Id,
@@ -143,6 +165,30 @@ public sealed record UpdateRecipeRequest(
     string Name,
     string Description,
     Dictionary<string, string> Items);
+
+public sealed record RecipeSyncPairRequest(
+    Guid SourceTagId,
+    Guid TargetTagId,
+    string Source,
+    string Target,
+    string? FieldKey);
+
+public sealed record RecipeSyncRequest(
+    string RecipeType,
+    int RecipeIndex,
+    IReadOnlyList<RecipeSyncPairRequest> Pairs);
+
+public sealed record RecipeSyncIssueDto(
+    string Target,
+    string Source,
+    string Value,
+    string Reason);
+
+public sealed record RecipeSyncResponseDto(
+    int Succeeded,
+    int Failed,
+    int Skipped,
+    IReadOnlyList<RecipeSyncIssueDto> Issues);
 
 public sealed record EfficiencyTimelineSegmentDto(
     int FaceplateIndex,
@@ -176,6 +222,7 @@ public static class ScadaDtoMapper
         return new DeviceConnectionDto(
             entity.Id,
             entity.Name,
+            entity.DriverKind.ToString(),
             entity.EndpointUrl,
             entity.SecurityMode,
             entity.SecurityPolicy,
@@ -203,14 +250,4 @@ public static class ScadaDtoMapper
             entity.UpdatedAt);
     }
 
-    public static RecipeDto ToDto(this RecipeEntity entity)
-    {
-        return new RecipeDto(
-            entity.Id,
-            entity.Name,
-            entity.Description,
-            entity.RecipeType,
-            entity.CreatedAt,
-            entity.UpdatedAt);
-    }
 }

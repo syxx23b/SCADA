@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TagDefinition, TagSnapshot } from '../types'
 import './Recipe.css'
 
@@ -24,6 +24,8 @@ interface RecipeDJProps {
   loadedRecipeName?: string
   showRecipe1SyncButton: boolean
   showRecipe2SyncButton: boolean
+  disableRecipe1SyncButton?: boolean
+  disableRecipe2SyncButton?: boolean
   recipe1SyncLabel: string
   recipe2SyncLabel: string
 }
@@ -44,6 +46,16 @@ type IndexedRecipeRow = RecipeRow & {
   seq: number
 }
 
+type FeedbackTone = 'success' | 'warning' | 'error'
+
+type SyncIssueRow = {
+  target: string
+  source: string
+  value: string
+  reason: string
+}
+
+const SYNC_WRITE_TIMEOUT_MS = 4000
 const RECIPE_CARD_GROUPS = ['全局设置', '出厂测试', '耐久测试', '泵头性能'] as const
 
 function getSimulatedFieldValue(fieldKey: string) {
@@ -120,6 +132,48 @@ const DJ_FIELD_ORDER = [
   'triggerOffCurrentMax',
   'flowMin',
   'flowMax',
+] as const
+
+const DJ_SYNC_FIELDS = [
+  { fieldKey: 'recipename', sourcePath: 'Local.RecipeName', targetField: 'RecipeName' },
+  { fieldKey: 'motortype', sourcePath: 'Local.RecipeDJ.motorType', targetField: 'motorType' },
+  { fieldKey: 'barcodelength', sourcePath: 'Local.RecipeDJ.barcodeLength', targetField: 'barcodeLength' },
+  { fieldKey: 'nobarcodestart', sourcePath: 'Local.RecipeDJ.noBarcodeStart', targetField: 'noBarcodeStart' },
+  { fieldKey: 'dcholdingpoweroff', sourcePath: 'Local.RecipeDJ.dcHoldingPowerOff', targetField: 'dcHoldingPowerOff' },
+  { fieldKey: 'inletcleantime', sourcePath: 'Local.RecipeDJ.inletCleanTime', targetField: 'inletCleanTime' },
+  { fieldKey: 'lowstartcount', sourcePath: 'Local.RecipeDJ.lowStartCount', targetField: 'lowStartCount' },
+  { fieldKey: 'lowstartcurrent', sourcePath: 'Local.RecipeDJ.lowStartCurrent', targetField: 'lowStartCurrent' },
+  { fieldKey: 'highvoltagetime', sourcePath: 'Local.RecipeDJ.highVoltageTime', targetField: 'highVoltageTime' },
+  { fieldKey: 'highbreakintime', sourcePath: 'Local.RecipeDJ.highBreakInTime', targetField: 'highBreakInTime' },
+  { fieldKey: 'highbreakincount', sourcePath: 'Local.RecipeDJ.highBreakInCount', targetField: 'highBreakInCount' },
+  { fieldKey: 'triggerontime', sourcePath: 'Local.RecipeDJ.triggerOnTime', targetField: 'triggerOnTime' },
+  { fieldKey: 'triggerofftime', sourcePath: 'Local.RecipeDJ.triggerOffTime', targetField: 'triggerOffTime' },
+  { fieldKey: 'triggercount', sourcePath: 'Local.RecipeDJ.triggerCount', targetField: 'triggerCount' },
+  { fieldKey: 'siphontime', sourcePath: 'Local.RecipeDJ.siphonTime', targetField: 'siphonTime' },
+  { fieldKey: 'siphon', sourcePath: 'Local.RecipeDJ.siphon', targetField: 'siphon' },
+  { fieldKey: 'pressureholdtime', sourcePath: 'Local.RecipeDJ.pressureHoldTime', targetField: 'pressureHoldTime' },
+  { fieldKey: 'holdingpressuredrop', sourcePath: 'Local.RecipeDJ.holdingPressureDrop', targetField: 'holdingPressureDrop' },
+  { fieldKey: 'blowtime', sourcePath: 'Local.RecipeDJ.blowTime', targetField: 'blowTime' },
+  { fieldKey: 'self_priming', sourcePath: 'Local.RecipeDJ.self_priming', targetField: 'self_priming' },
+  { fieldKey: 'self_primingtime', sourcePath: 'Local.RecipeDJ.self_primingTime', targetField: 'self_primingTime' },
+  { fieldKey: 'endurancetime', sourcePath: 'Local.RecipeDJ.enduranceTime', targetField: 'enduranceTime' },
+  { fieldKey: 'endurancetriggerontime', sourcePath: 'Local.RecipeDJ.enduranceTriggerOnTime', targetField: 'enduranceTriggerOnTime' },
+  { fieldKey: 'endurancetriggerofftime', sourcePath: 'Local.RecipeDJ.enduranceTriggerOffTime', targetField: 'enduranceTriggerOffTime' },
+  { fieldKey: 'pressureholdinginterval', sourcePath: 'Local.RecipeDJ.pressureHoldingInterval', targetField: 'pressureHoldingInterval' },
+  { fieldKey: 'enduranceinletmonitor', sourcePath: 'Local.RecipeDJ.enduranceInletMonitor', targetField: 'enduranceInletMonitor' },
+  { fieldKey: 'datauploadfrequency', sourcePath: 'Local.RecipeDJ.dataUploadFrequency', targetField: 'dataUploadFrequency' },
+  { fieldKey: 'pressuremin', sourcePath: 'Local.RecipeDJ.pressureMin', targetField: 'pressureMin' },
+  { fieldKey: 'pressuremax', sourcePath: 'Local.RecipeDJ.pressureMax', targetField: 'pressureMax' },
+  { fieldKey: 'holdingpressuremin', sourcePath: 'Local.RecipeDJ.holdingPressureMin', targetField: 'holdingPressureMin' },
+  { fieldKey: 'holdingpressuremax', sourcePath: 'Local.RecipeDJ.holdingPressureMax', targetField: 'holdingPressureMax' },
+  { fieldKey: 'recoilpressuremin', sourcePath: 'Local.RecipeDJ.recoilPressureMin', targetField: 'recoilPressureMin' },
+  { fieldKey: 'recoilpressuremax', sourcePath: 'Local.RecipeDJ.recoilPressureMax', targetField: 'recoilPressureMax' },
+  { fieldKey: 'currentmin', sourcePath: 'Local.RecipeDJ.currentMin', targetField: 'currentMin' },
+  { fieldKey: 'currentmax', sourcePath: 'Local.RecipeDJ.currentMax', targetField: 'currentMax' },
+  { fieldKey: 'triggeroffcurrentmin', sourcePath: 'Local.RecipeDJ.triggerOffCurrentMin', targetField: 'triggerOffCurrentMin' },
+  { fieldKey: 'triggeroffcurrentmax', sourcePath: 'Local.RecipeDJ.triggerOffCurrentMax', targetField: 'triggerOffCurrentMax' },
+  { fieldKey: 'flowmin', sourcePath: 'Local.RecipeDJ.flowMin', targetField: 'flowMin' },
+  { fieldKey: 'flowmax', sourcePath: 'Local.RecipeDJ.flowMax', targetField: 'flowMax' },
 ] as const
 
 type FieldMeta = {
@@ -304,13 +358,24 @@ function normalizeDcHoldingPowerOffValue(rawValue: string) {
   return rawValue.trim()
 }
 
+function normalizeNoBarcodeStartValue(rawValue: string) {
+  const normalized = rawValue.trim().toLowerCase()
+  if (normalized === '89' || normalized === 'yes' || normalized === 'true') return '89'
+  if (normalized === '78' || normalized === '0' || normalized === 'no' || normalized === 'false') return '78'
+  return rawValue.trim()
+}
+
 function resolveDictionaryValue(fieldKey: string, valueText: string) {
   const options = getFieldOptions(fieldKey)
   if (!options) return valueText
 
   const key = fieldKey.toLowerCase()
   const raw = normalizeNumericText(valueText)
-  const normalized = key === 'dcholdingpoweroff' ? normalizeDcHoldingPowerOffValue(raw) : raw
+  const normalized = key === 'dcholdingpoweroff'
+    ? normalizeDcHoldingPowerOffValue(raw)
+    : key === 'nobarcodestart'
+      ? normalizeNoBarcodeStartValue(raw)
+      : raw
   if (!normalized || normalized === '—') return options[0].value
 
   const matchedByValue = options.find((item) => item.value === normalized)
@@ -329,7 +394,11 @@ function formatSnapshotValue(fieldKey: string, tag: TagDefinition, snapshot: Tag
     const rawValue = snapshot?.value === null || snapshot?.value === undefined || snapshot.value === ''
       ? options[0].value
       : normalizeNumericText(String(snapshot.value))
-    const normalizedValue = key === 'dcholdingpoweroff' ? normalizeDcHoldingPowerOffValue(rawValue) : rawValue
+    const normalizedValue = key === 'dcholdingpoweroff'
+      ? normalizeDcHoldingPowerOffValue(rawValue)
+      : key === 'nobarcodestart'
+        ? normalizeNoBarcodeStartValue(rawValue)
+        : rawValue
     return options.find((item) => item.value === normalizedValue)?.label ?? normalizedValue
   }
 
@@ -512,6 +581,8 @@ export function RecipeDJ({
   loadedRecipeName,
   showRecipe1SyncButton,
   showRecipe2SyncButton,
+  disableRecipe1SyncButton = false,
+  disableRecipe2SyncButton = false,
   recipe1SyncLabel,
   recipe2SyncLabel,
 }: RecipeDJProps) {
@@ -530,8 +601,11 @@ export function RecipeDJ({
 
   // 反馈消息状态
   const [feedbackMessage, setFeedbackMessage] = useState<string>('')
+  const [feedbackTone, setFeedbackTone] = useState<FeedbackTone>('success')
+  const [syncIssueRows, setSyncIssueRows] = useState<SyncIssueRow[]>([])
   const [deletingRecipeId, setDeletingRecipeId] = useState<string | null>(null)
   const [pendingDeleteRecipeId, setPendingDeleteRecipeId] = useState<string | null>(null)
+  const feedbackTimerRef = useRef<number | null>(null)
 
 
 
@@ -558,11 +632,36 @@ export function RecipeDJ({
 
 
   // 显示反馈消息
+  const showFeedback = (
+    message: string,
+    options?: { tone?: FeedbackTone; issueRows?: SyncIssueRow[]; durationMs?: number },
+  ) => {
+    const tone = options?.tone ?? 'success'
+    const issueRows = options?.issueRows ?? []
+    const durationMs = options?.durationMs ?? (issueRows.length > 0 ? 15000 : 3000)
 
-  const showFeedback = (message: string) => {
     setFeedbackMessage(message)
-    setTimeout(() => setFeedbackMessage(''), 3000)
+    setFeedbackTone(tone)
+    setSyncIssueRows(issueRows)
+
+    if (feedbackTimerRef.current !== null) {
+      window.clearTimeout(feedbackTimerRef.current)
+    }
+
+    feedbackTimerRef.current = window.setTimeout(() => {
+      setFeedbackMessage('')
+      setSyncIssueRows([])
+      feedbackTimerRef.current = null
+    }, durationMs)
   }
+
+  useEffect(() => {
+    return () => {
+      if (feedbackTimerRef.current !== null) {
+        window.clearTimeout(feedbackTimerRef.current)
+      }
+    }
+  }, [])
 
   const handleNewRecipe = () => {
     setRecipeFileName('')
@@ -800,8 +899,35 @@ export function RecipeDJ({
 
       {/* 反馈消息框 */}
       {feedbackMessage && (
-        <div className="recipe-feedback">
-          {feedbackMessage}
+        <div className={`recipe-feedback recipe-feedback-${feedbackTone}`}>
+          <div className="recipe-feedback-message">{feedbackMessage}</div>
+          {syncIssueRows.length > 0 ? (
+            <div className="recipe-feedback-issues">
+              <table className="recipe-feedback-table">
+                <thead>
+                  <tr>
+                    <th>Target</th>
+                    <th>Source</th>
+                    <th>Value</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {syncIssueRows.slice(0, 30).map((item, index) => (
+                    <tr key={`${item.target}-${item.source}-${index}`}>
+                      <td title={item.target}>{item.target}</td>
+                      <td title={item.source}>{item.source}</td>
+                      <td>{item.value}</td>
+                      <td>{item.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {syncIssueRows.length > 30 ? (
+                <div className="recipe-feedback-truncated">Only first 30 issue rows are shown.</div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -850,178 +976,124 @@ export function RecipeDJ({
 
       {/* 配方同步区域 */}
       {(() => {
-        // DJ配方同步目标：Recipe_DB.DJRecipe[1/2].xxx，以及 Recipe_DB.RecipeName[1/2]
-        // 源字段：Local.RecipeDJ.xxx -> 目标字段：Recipe_DB.DJRecipe[1].xxx / Recipe_DB.DJRecipe[2].xxx
+        const getExactTag = (tags: TagDefinition[], pathValue: string) =>
+          tags.find((tag) => {
+            const candidates = [tag.displayName, tag.browseName, tag.nodeId]
+            return candidates.some((raw) => normalizeTagPath(raw ?? '') === pathValue)
+          }) ?? null
 
-        const getTargetFieldKey = (tag: TagDefinition): string | null => {
-          const candidates = [tag.displayName, tag.browseName, tag.nodeId]
-          const patterns = [
-            /^Recipe_DB\.RecipeName\[(\d+)\]$/i,
-            /^Recipe_DB_RecipeName(?:\[(\d+)\])?$/i,
-            /^Recipe_DB\.DJRecipe\[(\d+)\]\.(.+)$/i,
-            /^Recipe_DB_DJRecipe(?:\[(\d+)\])?_(.+)$/i,
-          ] as const
-          for (const raw of candidates) {
-            const v = normalizeTagPath(raw ?? '')
-            if (!v) continue
-            for (const p of patterns) {
-              const m = v.match(p)
-              if (m) {
-                if (m[2] === undefined) return 'recipeName'
-                return m[2].trim().replace(/^_+/, '')
-              }
-            }
-          }
-          return null
-        }
+        const writeWithRetry = async (tagId: string, value: string) => {
+          const tryWrite = () =>
+            Promise.race<boolean>([
+              onWrite(tagId, value),
+              new Promise<boolean>((resolve) => window.setTimeout(() => resolve(false), SYNC_WRITE_TIMEOUT_MS)),
+            ])
 
-
-        // DJ配方字段映射表（规则1使用 Local.RecipeName，其他使用 Local.RecipeDJ.xxx）
-        const DJ_FIELD_MAP: Record<string, string> = {
-          'recipename': 'Local.RecipeName',
-          'motortype': 'Local.RecipeDJ.motorType',
-          'barcodelength': 'Local.RecipeDJ.barcodeLength',
-          'nobarcodestart': 'Local.RecipeDJ.noBarcodeStart',
-          'dcholdingpoweroff': 'Local.RecipeDJ.dcHoldingPowerOff',
-          'inletcleantime': 'Local.RecipeDJ.inletCleanTime',
-          'lowstartcount': 'Local.RecipeDJ.lowStartCount',
-          'lowstartcurrent': 'Local.RecipeDJ.lowStartCurrent',
-          'highvoltagetime': 'Local.RecipeDJ.highVoltageTime',
-          'highbreakintime': 'Local.RecipeDJ.highBreakInTime',
-          'highbreakincount': 'Local.RecipeDJ.highBreakInCount',
-          'triggerontime': 'Local.RecipeDJ.triggerOnTime',
-          'triggerofftime': 'Local.RecipeDJ.triggerOffTime',
-          'triggercount': 'Local.RecipeDJ.triggerCount',
-          'siphontime': 'Local.RecipeDJ.siphonTime',
-          'siphon': 'Local.RecipeDJ.siphon',
-          'pressureholdtime': 'Local.RecipeDJ.pressureHoldTime',
-          'holdingpressuredrop': 'Local.RecipeDJ.holdingPressureDrop',
-          'blowtime': 'Local.RecipeDJ.blowTime',
-          'self_priming': 'Local.RecipeDJ.self_priming',
-          'self_primingtime': 'Local.RecipeDJ.self_primingTime',
-          'endurancetime': 'Local.RecipeDJ.enduranceTime',
-          'endurancetriggerontime': 'Local.RecipeDJ.enduranceTriggerOnTime',
-          'endurancetriggerofftime': 'Local.RecipeDJ.enduranceTriggerOffTime',
-          'pressureholdinginterval': 'Local.RecipeDJ.pressureHoldingInterval',
-          'enduranceinletmonitor': 'Local.RecipeDJ.enduranceInletMonitor',
-          'datauploadfrequency': 'Local.RecipeDJ.dataUploadFrequency',
-          'pressuremin': 'Local.RecipeDJ.pressureMin',
-          'pressuremax': 'Local.RecipeDJ.pressureMax',
-          'holdingpressuremin': 'Local.RecipeDJ.holdingPressureMin',
-          'holdingpressuremax': 'Local.RecipeDJ.holdingPressureMax',
-          'recoilpressuremin': 'Local.RecipeDJ.recoilPressureMin',
-          'recoilpressuremax': 'Local.RecipeDJ.recoilPressureMax',
-          'currentmin': 'Local.RecipeDJ.currentMin',
-          'currentmax': 'Local.RecipeDJ.currentMax',
-          'triggeroffcurrentmin': 'Local.RecipeDJ.triggerOffCurrentMin',
-          'triggeroffcurrentmax': 'Local.RecipeDJ.triggerOffCurrentMax',
-          'flowmin': 'Local.RecipeDJ.flowMin',
-          'flowmax': 'Local.RecipeDJ.flowMax',
+          const first = await tryWrite()
+          if (first) return true
+          await new Promise<void>((resolve) => window.setTimeout(resolve, 120))
+          return tryWrite()
         }
 
         const syncTo = async (recipeIndex: 1 | 2) => {
-          const recipeNameTarget = `recipe_db.recipename[${recipeIndex}]`
-          const targetPrefix = `recipe_db.djrecipe[${recipeIndex}].`
-          const targets = allTags.filter((tag) => {
-            const candidates = [tag.displayName, tag.browseName, tag.nodeId]
-            return candidates.some((raw) => {
-              const value = normalizeTagPath(raw ?? '').toLowerCase()
-              return value.includes(targetPrefix) || value === recipeNameTarget
-            })
+          showFeedback(`开始同步到 Recipe_DB.DJRecipe[${recipeIndex}]...`, {
+            tone: 'warning',
+            durationMs: 4000,
           })
-
-          if (targets.length === 0) {
-            showFeedback(`未找到 Recipe_DB.DJRecipe[${recipeIndex}] 的已订阅目标标签`)
-            return
-          }
 
           let writeCount = 0
           let failedCount = 0
           let skippedCount = 0
+          const issueRows: SyncIssueRow[] = []
 
-          for (const targetTag of targets) {
-            const fieldKey = getTargetFieldKey(targetTag)
-            if (!fieldKey) {
+          for (const item of DJ_SYNC_FIELDS) {
+            const sourceTag = getExactTag(sourceTags, item.sourcePath)
+            const targetPath = item.fieldKey === 'recipename'
+              ? `Recipe_DB.RecipeName[${recipeIndex}]`
+              : `Recipe_DB.DJRecipe[${recipeIndex}].${item.targetField}`
+            const targetTag = getExactTag(allTags, targetPath)
+
+            if (!sourceTag) {
               skippedCount += 1
+              issueRows.push({ target: targetPath, source: item.sourcePath, value: '-', reason: 'Source tag not found' })
               continue
             }
 
-            const sourceVarName = DJ_FIELD_MAP[fieldKey.toLowerCase()]
-            if (!sourceVarName) {
+            if (!targetTag) {
               skippedCount += 1
+              issueRows.push({ target: targetPath, source: item.sourcePath, value: '-', reason: 'Target tag not found' })
               continue
             }
 
             if (!targetTag.allowWrite) {
               failedCount += 1
+              issueRows.push({ target: targetPath, source: item.sourcePath, value: '-', reason: 'Target tag is read-only (allowWrite=false)' })
               continue
             }
 
-            let sourceValue = ''
-            if (sourceVarName === 'Local.RecipeName') {
-              const sourceTag = sourceTags.find((tag) => {
-                const candidates = [tag.displayName, tag.browseName, tag.nodeId]
-                return candidates.some((raw) => {
-                  const value = normalizeTagPath(raw ?? '')
-                  return value === 'Local.RecipeName' || value === 'Local.RecipeName[1]'
-                })
-              })
-              if (sourceTag) {
-                const snap = snapshots.get(sourceTag.id)
-                sourceValue = snap?.value !== undefined && snap?.value !== null ? String(snap.value) : ''
-              }
-            } else {
-              const sourceField = sourceVarName.replace('Local.RecipeDJ.', '')
-              const sourceTag = rows.find((row) => row.fieldKey.toLowerCase() === sourceField.toLowerCase())?.tag
-              if (sourceTag) {
-                const snap = getSnapshotOrSimulated(sourceTag, sourceField, snapshots)
-                sourceValue = getSnapshotRawValue(snap)
-              }
+            const snap = snapshots.get(sourceTag.id)
+            if (!snap || snap.value === undefined || snap.value === null) {
+              skippedCount += 1
+              issueRows.push({ target: targetPath, source: item.sourcePath, value: '-', reason: 'Source snapshot missing' })
+              continue
+            }
+
+            let sourceValue = getSnapshotRawValue(snap)
+            if (item.fieldKey === 'nobarcodestart') {
+              sourceValue = normalizeNoBarcodeStartValue(sourceValue)
+              sourceValue = sourceValue === '78' || sourceValue === '89' ? sourceValue : '89'
             }
 
             if (sourceValue === '') {
               skippedCount += 1
+              issueRows.push({ target: targetPath, source: item.sourcePath, value: '(empty)', reason: 'Source value is empty' })
               continue
             }
 
-            const succeeded = await onWrite(targetTag.id, sourceValue)
-            if (succeeded) writeCount += 1
-            else failedCount += 1
+            const succeeded = await writeWithRetry(targetTag.id, sourceValue)
+            if (succeeded) {
+              writeCount += 1
+              continue
+            }
+
+            failedCount += 1
+            issueRows.push({ target: targetPath, source: item.sourcePath, value: sourceValue, reason: `Write failed or timeout(>${SYNC_WRITE_TIMEOUT_MS}ms)` })
           }
 
           if (writeCount === 0 && failedCount === 0) {
-            showFeedback(`未找到可同步到 Recipe_DB.DJRecipe[${recipeIndex}] 的有效参数`)
+            showFeedback(`未找到可同步到 Recipe_DB.DJRecipe[${recipeIndex}] 的有效参数`, { tone: 'warning', issueRows })
             return
           }
 
           if (failedCount > 0) {
-            showFeedback(`同步完成：成功 ${writeCount} 项，失败 ${failedCount} 项，跳过 ${skippedCount} 项`)
+            showFeedback(`同步完成：成功 ${writeCount} 项，失败 ${failedCount} 项，跳过 ${skippedCount} 项`, { tone: 'error', issueRows })
             return
           }
 
-          showFeedback(`已同步 ${writeCount} 个参数到 Recipe_DB.DJRecipe[${recipeIndex}]${skippedCount > 0 ? `，跳过 ${skippedCount} 项` : ''}`)
+          showFeedback(`已同步 ${writeCount} 个参数到 Recipe_DB.DJRecipe[${recipeIndex}]${skippedCount > 0 ? `，跳过 ${skippedCount} 项` : ''}`, {
+            tone: skippedCount > 0 ? 'warning' : 'success',
+            issueRows: skippedCount > 0 ? issueRows : [],
+          })
         }
-
 
         return (
           <div className="recipe-sheet-head recipe-sync-card">
             <div className="recipe-sheet-head-main">
               <h3 className="recipe-sheet-title">配方同步</h3>
-              <p className="recipe-sheet-subtitle">请核对参数,同步到测试工位</p>
+              <p className="recipe-sheet-subtitle">请核对参数，同步到测试工位</p>
             </div>
             <div className="recipe-sheet-actions">
               {showRecipe1SyncButton ? (
-                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(1)}>
+                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(1)} disabled={disableRecipe1SyncButton}>
                   {recipe1SyncLabel || '同步到工位1 (DJRecipe[1])'}
                 </button>
               ) : null}
               {showRecipe2SyncButton ? (
-                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(2)}>
+                <button type="button" className="recipe-btn recipe-btn-save" onClick={() => void syncTo(2)} disabled={disableRecipe2SyncButton}>
                   {recipe2SyncLabel || '同步到工位2 (DJRecipe[2])'}
                 </button>
               ) : null}
             </div>
-
           </div>
         )
       })()}
