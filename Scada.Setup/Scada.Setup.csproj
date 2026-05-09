@@ -19,7 +19,7 @@
     <DefaultPayloadSourceDir Condition="'$(DefaultPayloadSourceDir)' == ''">..\Scada.Api\bin\Release\net8.0\win-x64\publish</DefaultPayloadSourceDir>
     <ServiceName Condition="'$(ServiceName)' == ''">smScada</ServiceName>
     <ServiceDisplayName Condition="'$(ServiceDisplayName)' == ''">smScada</ServiceDisplayName>
-    <InstallDirectory Condition="'$(InstallDirectory)' == ''">$(ProgramFiles)\smScada</InstallDirectory>
+    <InstallDirectory Condition="'$(InstallDirectory)' == ''">C:\smScada</InstallDirectory>
     <ServicePort Condition="'$(ServicePort)' == ''">5000</ServicePort>
   </PropertyGroup>
 
@@ -29,6 +29,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>
+    <EmbeddedResource Include="Assets\launcher.ico" LogicalName="launcher.ico" />
   </ItemGroup>
 
   <Target Name="PreparePayload" BeforeTargets="AssignTargetPaths">

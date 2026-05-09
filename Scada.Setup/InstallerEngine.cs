@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 
@@ -8,6 +9,9 @@ namespace Scada.Setup;
 
 internal static class InstallerEngine
 {
+    private const string LauncherName = "清洗机测试管理平台";
+    private const string LauncherUrl = "http://localhost:5000/";
+
     public static void Install(InstallerOptions options, Action<string> log)
     {
         EnsureWindows();
@@ -38,7 +42,7 @@ internal static class InstallerEngine
         ConfigureFirewall(options, log);
 
         RunProcess("sc.exe", $"start {options.ServiceName}", ignoreErrors: false, log);
-        CreateDesktopShortcut(options, log);
+        CreateDesktopLauncher(options, log);
 
         log("安装完成。");
         log($"服务名称：{options.ServiceName}");
@@ -52,7 +56,7 @@ internal static class InstallerEngine
 
         StopAndDeleteService(options, log);
         RunProcess("netsh", $"advfirewall firewall delete rule name=\"{options.ServiceDisplayName} TCP {options.Port}\"", ignoreErrors: true, log);
-        DeleteDesktopShortcut(log);
+        DeleteDesktopLauncher(log);
 
         if (Directory.Exists(options.InstallDirectory))
         {
@@ -105,50 +109,94 @@ internal static class InstallerEngine
         RunProcess("netsh", $"advfirewall firewall add rule name=\"{ruleName}\" dir=in action=allow protocol=TCP localport={options.Port}", ignoreErrors: false, log);
     }
 
-    private static void CreateDesktopShortcut(InstallerOptions options, Action<string> log)
+    private static void CreateDesktopLauncher(InstallerOptions options, Action<string> log)
     {
         var desktopDirectory = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
         Directory.CreateDirectory(desktopDirectory);
 
-        var shortcutPath = Path.Combine(desktopDirectory, "清洗机测试管理平台.url");
+        var launcherPath = Path.Combine(desktopDirectory, $"{LauncherName}.lnk");
         var iconPath = CopyLauncherIcon(options.InstallDirectory);
-        var shortcutContent = string.Join(Environment.NewLine, new[]
-        {
-            "[InternetShortcut]",
-            "URL=http://localhost:5000/",
-            $"IconFile={iconPath}",
-            "IconIndex=0",
-            string.Empty,
-        });
 
-        File.WriteAllText(shortcutPath, shortcutContent, Encoding.UTF8);
-        log($"已创建桌面启动方式：{shortcutPath}");
+        DeleteLegacyUrlLauncher(desktopDirectory);
+        CreateShellLink(launcherPath, iconPath, options.InstallDirectory);
+        log($"已创建桌面启动入口：{launcherPath}");
+    }
+
+    private static void CreateShellLink(string launcherPath, string iconPath, string workingDirectory)
+    {
+        var shellType = Type.GetTypeFromProgID("WScript.Shell", throwOnError: true)
+            ?? throw new InvalidOperationException("无法创建桌面启动入口：WScript.Shell 不可用。");
+        dynamic? shell = null;
+        dynamic? shortcut = null;
+
+        try
+        {
+            shell = Activator.CreateInstance(shellType);
+            shortcut = shell!.CreateShortcut(launcherPath);
+            shortcut.TargetPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "explorer.exe");
+            shortcut.Arguments = LauncherUrl;
+            shortcut.WorkingDirectory = workingDirectory;
+            shortcut.IconLocation = $"{iconPath},0";
+            shortcut.Description = LauncherName;
+            shortcut.Save();
+        }
+        finally
+        {
+            if (shortcut is not null)
+            {
+                Marshal.FinalReleaseComObject(shortcut);
+            }
+
+            if (shell is not null)
+            {
+                Marshal.FinalReleaseComObject(shell);
+            }
+        }
     }
 
     private static string CopyLauncherIcon(string installDirectory)
     {
-        var sourceIconPath = Path.Combine(AppContext.BaseDirectory, "launcher.ico");
-        var installedIconPath = Path.Combine(installDirectory, "清洗机测试管理平台.ico");
-        if (!File.Exists(sourceIconPath))
+        var installedIconPath = Path.Combine(installDirectory, $"{LauncherName}.ico");
+        var externalIconPath = Path.Combine(AppContext.BaseDirectory, "launcher.ico");
+        if (File.Exists(externalIconPath))
+        {
+            File.Copy(externalIconPath, installedIconPath, overwrite: true);
+            return installedIconPath;
+        }
+
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("launcher.ico");
+        if (stream is null)
         {
             return Path.Combine(installDirectory, "Scada.Api.exe");
         }
 
-        File.Copy(sourceIconPath, installedIconPath, overwrite: true);
+        using var fileStream = File.Create(installedIconPath);
+        stream.CopyTo(fileStream);
         return installedIconPath;
     }
 
-    private static void DeleteDesktopShortcut(Action<string> log)
+    private static void DeleteDesktopLauncher(Action<string> log)
     {
         var desktopDirectory = Environment.GetFolderPath(Environment.SpecialFolder.CommonDesktopDirectory);
-        var shortcutPath = Path.Combine(desktopDirectory, "清洗机测试管理平台.url");
-        if (!File.Exists(shortcutPath))
+        var launcherPath = Path.Combine(desktopDirectory, $"{LauncherName}.lnk");
+        DeleteLegacyUrlLauncher(desktopDirectory);
+
+        if (!File.Exists(launcherPath))
         {
             return;
         }
 
-        File.Delete(shortcutPath);
-        log($"已删除桌面启动方式：{shortcutPath}");
+        File.Delete(launcherPath);
+        log($"已删除桌面启动入口：{launcherPath}");
+    }
+
+    private static void DeleteLegacyUrlLauncher(string desktopDirectory)
+    {
+        var legacyPath = Path.Combine(desktopDirectory, $"{LauncherName}.url");
+        if (File.Exists(legacyPath))
+        {
+            File.Delete(legacyPath);
+        }
     }
 
     private static void CopyDirectory(string sourceDirectory, string destinationDirectory)
@@ -254,7 +302,7 @@ internal sealed class InstallerOptions
 {
     public static InstallerOptions Default { get; } = new();
 
-    public string InstallDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "smScada");
+    public string InstallDirectory { get; set; } = @"C:\smScada";
     public string ServiceName { get; set; } = "smScada";
     public string ServiceDisplayName { get; set; } = "smScada";
     public int Port { get; set; } = 5000;
