@@ -8,6 +8,7 @@
 - 部署配置要求从当前项目根目录构建，并部署到 `http://localhost:5000`。
 - 安装包默认使用 API 的发布目录作为 payload 来源：
   `Scada.Api/bin/Release/net8.0/win-x64/publish`
+- 安装包必须将 payload 内容以内嵌资源形式打入最终 exe，不能依赖开发机上的外部 `payload` 目录。
 
 ## 二、服务安装要求
 
@@ -15,9 +16,9 @@
 - 安装程序必须以管理员权限运行。
 - 安装时需要先停止并删除旧服务。
 - 安装目录默认位于：
-  `$(ProgramFiles)\Scada_Codex_Siemens`
-- 默认服务名为 `ScadaApi`。
-- 默认服务显示名为 `SCADA API`。
+  `$(ProgramFiles)\smScada`
+- 默认服务名为 `smScada`。
+- 默认服务显示名为 `smScada`。
 - 服务启动方式为 Windows Service。
 - 服务运行账户为 `LocalSystem`。
 - 服务启动参数应包含：
@@ -73,8 +74,8 @@
 ## 七、默认信息
 
 - 开发者：`ZhangXC`
-- 公司：`松门电器`
-- 安装程序产品名：`SCADA 安装程序`
+- 公司/产品标识：`smScada`
+- 安装程序产品名：`smScada`
 - 安装器默认服务端口：`5000`
 
 ## 八、安装包命名与输出位置

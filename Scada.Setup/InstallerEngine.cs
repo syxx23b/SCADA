@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.IO.Compression;
+using System.Reflection;
 using System.Security.Principal;
 using System.Text;
 
@@ -11,13 +13,9 @@ internal static class InstallerEngine
         EnsureWindows();
         EnsureAdministrator();
 
-        var payloadRoot = Path.Combine(AppContext.BaseDirectory, "payload");
-        if (!Directory.Exists(payloadRoot))
-        {
-            throw new DirectoryNotFoundException($"找不到安装包内容：{payloadRoot}");
-        }
-
+        var payloadRoot = ResolvePayloadRoot(log);
         var installDir = Path.GetFullPath(options.InstallDirectory);
+
         StopAndDeleteService(options, log);
         DeleteDirectoryWithRetry(installDir, log);
         Directory.CreateDirectory(installDir);
@@ -34,7 +32,7 @@ internal static class InstallerEngine
             $"create {options.ServiceName} binPath= \"{binPath}\" start= auto DisplayName= \"{options.ServiceDisplayName}\" obj= LocalSystem",
             ignoreErrors: false,
             log);
-        RunProcess("sc.exe", $"description {options.ServiceName} \"松门电器 SCADA 服务\"", ignoreErrors: false, log);
+        RunProcess("sc.exe", $"description {options.ServiceName} \"smScada service\"", ignoreErrors: false, log);
         RunProcess("sc.exe", $"failure {options.ServiceName} reset= 86400 actions= restart/5000/restart/5000/restart/5000", ignoreErrors: true, log);
 
         ConfigureFirewall(options, log);
@@ -68,6 +66,30 @@ internal static class InstallerEngine
     {
         EnsureWindows();
         EnsureAdministrator();
+    }
+
+    private static string ResolvePayloadRoot(Action<string> log)
+    {
+        var externalPayloadRoot = Path.Combine(AppContext.BaseDirectory, "payload");
+        if (Directory.Exists(externalPayloadRoot))
+        {
+            return externalPayloadRoot;
+        }
+
+        var extractedPayloadRoot = Path.Combine(Path.GetTempPath(), "Scada.Setup", $"payload-{Environment.ProcessId}");
+        if (Directory.Exists(extractedPayloadRoot))
+        {
+            Directory.Delete(extractedPayloadRoot, recursive: true);
+        }
+
+        Directory.CreateDirectory(extractedPayloadRoot);
+
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip")
+            ?? throw new DirectoryNotFoundException($"找不到安装包内容：{externalPayloadRoot}");
+        ZipFile.ExtractToDirectory(stream, extractedPayloadRoot, overwriteFiles: true);
+
+        log($"已释放安装包内容：{extractedPayloadRoot}");
+        return extractedPayloadRoot;
     }
 
     private static void StopAndDeleteService(InstallerOptions options, Action<string> log)
@@ -232,8 +254,8 @@ internal sealed class InstallerOptions
 {
     public static InstallerOptions Default { get; } = new();
 
-    public string InstallDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "松门电器SCADA");
-    public string ServiceName { get; set; } = "ScadaApi";
-    public string ServiceDisplayName { get; set; } = "松门电器 SCADA";
+    public string InstallDirectory { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "smScada");
+    public string ServiceName { get; set; } = "smScada";
+    public string ServiceDisplayName { get; set; } = "smScada";
     public int Port { get; set; } = 5000;
 }
