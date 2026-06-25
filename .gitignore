@@ -1,0 +1,27 @@
+# .NET
+**/bin/
+**/obj/
+
+# Frontend
+node_modules/
+scada-web/node_modules/
+scada-web/dist/
+.tmp-build/
+
+# Runtime data and logs
+*.log
+*.db-shm
+*.db-wal
+*.db.before-*.bak
+*.db.before-*.bak-shm
+*.db.before-*.bak-wal
+*.db.corrupt.bak
+tags_scada_db_before*.csv
+.runlogs/
+
+# Local package/cache folders
+.dotnet-home/
+.nuget/
+
+# Certificates and local machine stores
+roots.sst
