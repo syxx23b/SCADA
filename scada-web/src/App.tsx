@@ -333,9 +333,12 @@ const baseSidebarItems: SidebarItem[] = [
   { key: 'help', label: '帮助', icon: '？' },
 ]
 
-const protectedSidebarItems: SidebarItem[] = [
+const alwaysVisibleSidebarItems: SidebarItem[] = [
   { key: 'runtime', label: '标签', icon: <TagSidebarIcon /> },
   { key: 'tags', label: '订阅', icon: '◎' },
+]
+
+const protectedSidebarItems: SidebarItem[] = [
   { key: 'reportConfig', label: '报表配置', icon: <ReportConfigSidebarIcon /> },
 ]
 
@@ -555,6 +558,19 @@ function isLocalVariableGroup(groupKey: string | null | undefined) {
 
 function isLocalVariableTag(tag: TagDefinition) {
   return isLocalVariableGroup(tag.groupKey)
+}
+
+function getRuntimeGroupTone(group: string) {
+  const normalized = group.trim().toLowerCase()
+  if (!normalized) return 'group-tone-default'
+
+  let hash = 0
+  for (let index = 0; index < normalized.length; index += 1) {
+    hash = ((hash << 5) - hash + normalized.charCodeAt(index)) | 0
+  }
+
+  const toneIndex = Math.abs(hash) % 6
+  return `group-tone-${toneIndex + 1}`
 }
 
 function isLocalRecipeScopedTag(tag: TagDefinition) {
@@ -1510,7 +1526,9 @@ function App() {
       if (!MENU_VISIBILITY_KEYS.includes(item.key as MenuVisibilityKey)) return true
       return reportVisibility[item.key as MenuVisibilityKey] ?? true
     })
-    return isAuthenticated ? [...visibleBaseSidebarItems, ...protectedSidebarItems] : visibleBaseSidebarItems
+    return isAuthenticated
+      ? [...visibleBaseSidebarItems, ...alwaysVisibleSidebarItems, ...protectedSidebarItems]
+      : [...visibleBaseSidebarItems, ...alwaysVisibleSidebarItems]
   }, [isAuthenticated, reportVisibility])
   const reportConfigItems = [
     ...REPORT_SERVICE_KEYS.map((key) => ({
@@ -1829,6 +1847,11 @@ function App() {
     })
 
     return [...tags].sort((left, right) => {
+      const leftGroup = getResolvedGroup(runtimeNameById[left.deviceId] ?? '', left)
+      const rightGroup = getResolvedGroup(runtimeNameById[right.deviceId] ?? '', right)
+      const groupCompare = leftGroup.localeCompare(rightGroup, 'zh-CN', { numeric: true, sensitivity: 'base' })
+      if (groupCompare !== 0) return groupCompare
+
       const leftName = (left.displayName || left.browseName || getDisplayName(left.nodeId)).trim()
       const rightName = (right.displayName || right.browseName || getDisplayName(right.nodeId)).trim()
       const nameCompare = leftName.localeCompare(rightName, 'zh-CN', { numeric: true, sensitivity: 'base' })
@@ -1923,6 +1946,14 @@ function App() {
   const onlineDeviceCount = useMemo(
     () => deviceStatusCards.filter((item) => item.statusClassName === 'normal').length,
     [deviceStatusCards],
+  )
+  const healthyRuntimeCount = useMemo(
+    () => runtimeRows.filter((item) => item.stat.className === 'normal').length,
+    [runtimeRows],
+  )
+  const runtimeGroupCount = useMemo(
+    () => groups.filter((group) => group !== 'all').length,
+    [groups],
   )
 
   async function openVnc(faceplateIndex: number) {
@@ -2132,9 +2163,9 @@ function App() {
   useEffect(() => { if (!selectedDeviceId && activeDeviceId) setSelectedDeviceId(activeDeviceId) }, [activeDeviceId, selectedDeviceId])
   useEffect(() => { setSelectedTagGroupFilter('all') }, [activeDeviceId])
   useEffect(() => {
-    if (!isAuthenticated && (view === 'runtime' || view === 'tags' || view === 'reportConfig')) {
+    if (!isAuthenticated && view === 'reportConfig') {
       setView('login')
-      setStatusMessage('请先登录后再访问标签、订阅或报表配置页面')
+      setStatusMessage('请先登录后再访问报表配置页面')
     }
   }, [isAuthenticated, view])
   useEffect(() => {
@@ -2413,9 +2444,9 @@ function App() {
       return
     }
 
-    if (!isAuthenticated && (key === 'runtime' || key === 'tags' || key === 'reportConfig')) {
+    if (!isAuthenticated && key === 'reportConfig') {
       setView('login')
-      setStatusMessage('请先登录后再访问标签、订阅或报表配置页面')
+      setStatusMessage('请先登录后再访问报表配置页面')
       return
     }
 
@@ -2446,7 +2477,7 @@ function App() {
       setIsAuthenticated(true)
       setLoginPassword('')
       setView('runtime')
-      setStatusMessage('登录成功，已开放标签、订阅与报表配置菜单')
+      setStatusMessage('登录成功')
       return
     }
 
@@ -2458,7 +2489,7 @@ function App() {
     setLoginUsername('')
     setLoginPassword('')
     setView('login')
-    setStatusMessage('已退出登录')
+    setStatusMessage('已注销')
   }
 
   function handleAuthEntryClick() {
@@ -2514,10 +2545,10 @@ function App() {
                 className="sidebar-auth-entry"
                 onClick={handleAuthEntryClick}
                 disabled={isSidebarCollapsed}
-                title={isSidebarCollapsed ? (isAuthenticated ? '退出' : '登录') : undefined}
+                title={isSidebarCollapsed ? (isAuthenticated ? '注销' : '登录') : undefined}
               >
                 <span className="sidebar-auth-icon">{isAuthenticated ? '?' : <UserLoginSidebarIcon />}</span>
-                <span className="sidebar-auth-label">{isAuthenticated ? '退出' : '登录'}</span>
+                <span className="sidebar-auth-label">{isAuthenticated ? '注销' : '登录'}</span>
               </button>
             </div>
             <button
@@ -2595,226 +2626,218 @@ function App() {
     <section className={`runtime-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <section className="runtime-content">
         <header className="runtime-topbar">
-          <div className="runtime-title-wrap">
-            <h1>清洗机测试系统</h1>
-          </div>
-          <div className="runtime-topbar-actions">
-            <button type="button" className="icon-circle">?</button>
-            <button type="button" className="icon-circle">?</button>
-            <div className="avatar-circle">SC</div>
+          <article className="runtime-title-card">
+            <div className="runtime-title-wrap">
+              <div className="runtime-title-copy">
+                <span className="runtime-title-kicker">RUNTIME TAGS</span>
+                <h1>标签监控</h1>
+              </div>
+            </div>
+          </article>
+          <div className="runtime-topbar-stats" aria-label="标签监控汇总">
+            <article className="summary-card">
+              <span className="summary-label">在线设备</span>
+              <strong>{onlineDeviceCount}</strong>
+              <span className="summary-caption">{devices.length} 台总计</span>
+            </article>
+            <article className="summary-card">
+              <span className="summary-label">健康标签</span>
+              <strong>{healthyRuntimeCount}</strong>
+              <span className="summary-caption">{runtimeRows.length} 条变量</span>
+            </article>
+            <article className="summary-card">
+              <span className="summary-label">可用分组</span>
+              <strong>{runtimeGroupCount}</strong>
+              <span className="summary-caption">分组视图</span>
+            </article>
           </div>
         </header>
 
-        <section className="runtime-device-status-strip" aria-label="设备连接状态总览">
-          <article className="runtime-device-status-card">
-            <header className="runtime-device-status-head">
-              <strong>设备连接状态</strong>
-              <span className="status-line">{onlineDeviceCount}/{deviceStatusCards.length || 0} 正常连接 · 自动更新</span>
-            </header>
-            <section className="devices-layout" aria-label="设备管理">
-              <article className="device-form-panel">
-                <div className="panel-head">
-                  <div>
-                    <div className="panel-title">{deviceDraft.id ? '编辑设备' : '新增设备'}</div>
-                    <div className="panel-subtitle">新增设备时可选择 `OPC UA` 或 `Siemens S7` 驱动</div>
-                  </div>
-                  <div className="panel-actions panel-actions-in-head">
-                    <button type="button" className="soft-action" onClick={resetDeviceDraft}>
-                      清空
-                    </button>
-                    <button type="button" className="soft-action danger" onClick={() => void handleDeleteDevice()} disabled={!deviceDraft.id || savingDevice}>
-                      删除设备
-                    </button>
-                    <button type="button" className="primary-action" onClick={() => void handleSaveDevice()} disabled={savingDevice}>
-                      {savingDevice ? '保存中' : (deviceDraft.id ? '更新设备' : '创建设备')}
-                    </button>
-                  </div>
+        <section className="runtime-device-status-strip" aria-label="设备管理">
+          <section className="devices-layout">
+            <article className="device-form-panel">
+              <div className="panel-head">
+                <div>
+                  <div className="panel-title">{deviceDraft.id ? '编辑设备' : '新增设备'}</div>
                 </div>
-                <div className="form-grid">
-                  <label>
-                    <span>设备名称</span>
-                    <input value={deviceDraft.name} onChange={(e) => setDeviceDraft((current) => ({ ...current, name: e.target.value }))} placeholder="例如：Line1 PLC" />
-                  </label>
-                  <label>
-                    <span>驱动类型</span>
-                    <select
-                      value={deviceDraft.driverKind}
-                      onChange={(e) => setDeviceDraft((current) => ({
-                        ...current,
-                        driverKind: e.target.value,
-                        securityMode: e.target.value === 'SiemensS7' ? 'None' : current.securityMode,
-                        securityPolicy: e.target.value === 'SiemensS7' ? 'None' : current.securityPolicy,
-                      }))}
-                    >
-                      <option value="OpcUa">OPC UA</option>
-                      <option value="SiemensS7">Siemens S7</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>{isSiemensDraft ? 'PLC 地址 / Webserver 地址' : 'Endpoint URL'}</span>
-                    <input
-                      value={deviceDraft.endpointUrl}
-                      onChange={(e) => setDeviceDraft((current) => ({ ...current, endpointUrl: e.target.value }))}
-                      placeholder={isSiemensDraft ? '例如：192.168.0.10 或 https://192.168.0.10' : '例如：opc.tcp://192.168.0.10:4840'}
-                    />
-                  </label>
-                  <label>
-                    <span>认证方式</span>
-                    <select value={deviceDraft.authMode} onChange={(e) => setDeviceDraft((current) => ({ ...current, authMode: e.target.value }))}>
-                      <option value="Anonymous">Anonymous</option>
-                      <option value="UsernamePassword">Username / Password</option>
-                    </select>
-                  </label>
-                  {!isSiemensDraft && (
-                    <>
-                      <label>
-                        <span>Security Mode</span>
-                        <select value={deviceDraft.securityMode} onChange={(e) => setDeviceDraft((current) => ({ ...current, securityMode: e.target.value }))}>
-                          <option value="None">None</option>
-                          <option value="Sign">Sign</option>
-                          <option value="SignAndEncrypt">SignAndEncrypt</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Security Policy</span>
-                        <select value={deviceDraft.securityPolicy} onChange={(e) => setDeviceDraft((current) => ({ ...current, securityPolicy: e.target.value }))}>
-                          <option value="None">None</option>
-                          <option value="Basic128Rsa15">Basic128Rsa15</option>
-                          <option value="Basic256">Basic256</option>
-                          <option value="Basic256Sha256">Basic256Sha256</option>
-                        </select>
-                      </label>
-                    </>
-                  )}
-                  {deviceDraft.authMode === 'UsernamePassword' && (
-                    <>
-                      <label>
-                        <span>用户名</span>
-                        <input value={deviceDraft.username} onChange={(e) => setDeviceDraft((current) => ({ ...current, username: e.target.value }))} placeholder="用户名" />
-                      </label>
-                      <label>
-                        <span>密码</span>
-                        <input type="password" value={deviceDraft.password} onChange={(e) => setDeviceDraft((current) => ({ ...current, password: e.target.value }))} placeholder="密码" />
-                      </label>
-                    </>
-                  )}
-                  <label className="inline-check">
-                    <input type="checkbox" checked={deviceDraft.autoConnect} onChange={(e) => setDeviceDraft((current) => ({ ...current, autoConnect: e.target.checked }))} />
-                    <span>启动时自动连接</span>
-                  </label>
+                <div className="panel-actions panel-actions-in-head">
+                  <button type="button" className="soft-action" onClick={resetDeviceDraft}>
+                    清空
+                  </button>
+                  <button type="button" className="soft-action danger" onClick={() => void handleDeleteDevice()} disabled={!deviceDraft.id || savingDevice}>
+                    删除设备
+                  </button>
+                  <button type="button" className="primary-action" onClick={() => void handleSaveDevice()} disabled={savingDevice}>
+                    {savingDevice ? '保存中' : (deviceDraft.id ? '更新设备' : '创建设备')}
+                  </button>
                 </div>
-                <div className="panel-subtitle">
-                  {isSiemensDraft
-                    ? 'Siemens S7 驱动通过导入 DB 标签配置点位，并按现有采样参数轮询更新。'
-                    : 'OPC UA 驱动保持现有 Endpoint / SecurityMode / SecurityPolicy 连接方式。'}
-                </div>
-              </article>
-              <article className="device-list-panel">
-                <div className="panel-head">
-                  <div>
-                    <div className="panel-title">设备列表</div>
-                    <div className="panel-subtitle">选择设备后可编辑、连接、断开，再去浏览变量</div>
-                  </div>
-                  <div className="panel-actions panel-actions-in-head">
-                    <button type="button" className="soft-action" onClick={() => void loadWorkspace()} disabled={loading}>
-                      {loading ? '刷新中' : '刷新'}
-                    </button>
-                    <button type="button" className="soft-action" onClick={() => void handleConnectSelectedDevice()} disabled={!selectedDevice}>
-                      连接
-                    </button>
-                    <button type="button" className="soft-action" onClick={() => void handleDisconnectSelectedDevice()} disabled={!selectedDevice}>
-                      断开
-                    </button>
-                  </div>
-                </div>
-                <div className="table-shell compact-shell">
-                  <div className="table-scroll">
-                    <table className="list-table">
-                      <colgroup>
-                        <col />
-                        <col style={{ width: '110px' }} />
-                        <col style={{ width: '100px' }} />
-                        <col style={{ width: '84px' }} />
-                      </colgroup>
-                      <thead>
-                        <tr>
-                          <th>设备</th>
-                          <th>驱动</th>
-                          <th>状态</th>
-                          <th>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {devices.map((device) => (
-                          <tr key={device.id} className="list-row">
-                            <td>
-                              <strong>{device.name}</strong>
-                              <div className="node-meta">{device.endpointUrl}</div>
-                            </td>
-                            <td>{DRIVER_LABELS[device.driverKind] ?? device.driverKind}</td>
-                            <td>{device.status}</td>
-                            <td>
-                              <div className="row-actions">
-                                <button
-                                  type="button"
-                                  className="mini-button"
-                                  onClick={() => {
-                                    setSelectedDeviceId(device.id)
-                                    loadDeviceIntoDraft(device)
-                                  }}
-                                >
-                                  编辑
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </article>
-            </section>
-            {deviceStatusCards.length === 0 ? (
-              <div className="empty-note">暂无设备状态数据</div>
-            ) : (
-              <div className="runtime-device-status-list">
-                {deviceStatusCards.map((device) => (
-                  <div key={device.id} className={`runtime-device-status-item ${device.statusClassName}`}>
-                    <div className="runtime-device-status-main">
-                      <span className="runtime-device-name">{device.name} · {DRIVER_LABELS[selectedDevice?.id === device.id ? selectedDevice.driverKind : (devices.find((item) => item.id === device.id)?.driverKind ?? 'OpcUa')] ?? 'OPC UA'}</span>
-                      <span className="node-meta">{device.endpointUrl}</span>
-                    </div>
-                    <span className={`status-pill ${device.statusClassName}`}>{device.statusLabel}</span>
-                  </div>
-                ))}
               </div>
-            )}
-          </article>
-        </section>
+              <div className="form-grid">
+                <label>
+                  <span>设备名称</span>
+                  <input value={deviceDraft.name} onChange={(e) => setDeviceDraft((current) => ({ ...current, name: e.target.value }))} placeholder="例如：Line1 PLC" />
+                </label>
+                <label>
+                  <span>驱动类型</span>
+                  <select
+                    value={deviceDraft.driverKind}
+                    onChange={(e) => setDeviceDraft((current) => ({
+                      ...current,
+                      driverKind: e.target.value,
+                      securityMode: e.target.value === 'SiemensS7' ? 'None' : current.securityMode,
+                      securityPolicy: e.target.value === 'SiemensS7' ? 'None' : current.securityPolicy,
+                    }))}
+                  >
+                    <option value="OpcUa">OPC UA</option>
+                    <option value="SiemensS7">Siemens S7</option>
+                  </select>
+                </label>
+                <label>
+                  <span>{isSiemensDraft ? 'PLC 地址 / Webserver 地址' : 'Endpoint URL'}</span>
+                  <input
+                    value={deviceDraft.endpointUrl}
+                    onChange={(e) => setDeviceDraft((current) => ({ ...current, endpointUrl: e.target.value }))}
+                    placeholder={isSiemensDraft ? '例如：192.168.0.10 或 https://192.168.0.10' : '例如：opc.tcp://192.168.0.10:4840'}
+                  />
+                </label>
+                <label>
+                  <span>认证方式</span>
+                  <select value={deviceDraft.authMode} onChange={(e) => setDeviceDraft((current) => ({ ...current, authMode: e.target.value }))}>
+                    <option value="Anonymous">Anonymous</option>
+                    <option value="UsernamePassword">Username / Password</option>
+                  </select>
+                </label>
+                {!isSiemensDraft && (
+                  <>
+                    <label>
+                      <span>Security Mode</span>
+                      <select value={deviceDraft.securityMode} onChange={(e) => setDeviceDraft((current) => ({ ...current, securityMode: e.target.value }))}>
+                        <option value="None">None</option>
+                        <option value="Sign">Sign</option>
+                        <option value="SignAndEncrypt">SignAndEncrypt</option>
+                      </select>
+                    </label>
+                    <label>
+                      <span>Security Policy</span>
+                      <select value={deviceDraft.securityPolicy} onChange={(e) => setDeviceDraft((current) => ({ ...current, securityPolicy: e.target.value }))}>
+                        <option value="None">None</option>
+                        <option value="Basic128Rsa15">Basic128Rsa15</option>
+                        <option value="Basic256">Basic256</option>
+                        <option value="Basic256Sha256">Basic256Sha256</option>
+                      </select>
+                    </label>
+                  </>
+                )}
+                {deviceDraft.authMode === 'UsernamePassword' && (
+                  <>
+                    <label>
+                      <span>用户名</span>
+                      <input value={deviceDraft.username} onChange={(e) => setDeviceDraft((current) => ({ ...current, username: e.target.value }))} placeholder="用户名" />
+                    </label>
+                    <label>
+                      <span>密码</span>
+                      <input type="password" value={deviceDraft.password} onChange={(e) => setDeviceDraft((current) => ({ ...current, password: e.target.value }))} placeholder="密码" />
+                    </label>
+                  </>
+                )}
+              </div>
+            </article>
 
-        <section className="runtime-toolbar-row runtime-toolbar-row--compact">
-          <div className="runtime-toolbar-meta">
-            <span>{runtimeRows.length} 条变量</span>
-            <span>{loading ? '刷新中' : statusMessage}</span>
-          </div>
+            <article className="device-list-panel">
+              <div className="panel-head">
+                <div>
+                  <div className="panel-title">设备列表</div>
+                </div>
+                <div className="panel-actions panel-actions-in-head">
+                  <button type="button" className="soft-action" onClick={() => void loadWorkspace()} disabled={loading}>
+                    {loading ? '刷新中' : '刷新'}
+                  </button>
+                  <button type="button" className="soft-action" onClick={() => void handleConnectSelectedDevice()} disabled={!selectedDevice}>
+                    连接
+                  </button>
+                  <button type="button" className="soft-action" onClick={() => void handleDisconnectSelectedDevice()} disabled={!selectedDevice}>
+                    断开
+                  </button>
+                </div>
+              </div>
+              <div className="table-shell compact-shell">
+                <div className="table-scroll">
+                  <table className="list-table">
+                    <colgroup>
+                      <col />
+                      <col style={{ width: '110px' }} />
+                      <col style={{ width: '100px' }} />
+                      <col style={{ width: '84px' }} />
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>设备</th>
+                        <th>驱动</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {devices.map((device) => (
+                        <tr key={device.id} className="list-row">
+                          <td>
+                            <strong>{device.name}</strong>
+                            <div className="node-meta">{device.endpointUrl}</div>
+                          </td>
+                          <td>{DRIVER_LABELS[device.driverKind] ?? device.driverKind}</td>
+                          <td>
+                            <span className={`status-pill ${(deviceStatusCards.find((item) => item.id === device.id)?.statusClassName) ?? 'fault'}`}>
+                              {deviceStatusCards.find((item) => item.id === device.id)?.statusLabel ?? device.status}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="row-actions">
+                              <button
+                                type="button"
+                                className="mini-button"
+                                onClick={() => {
+                                  setSelectedDeviceId(device.id)
+                                  loadDeviceIntoDraft(device)
+                                }}
+                              >
+                                编辑
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </article>
+          </section>
         </section>
 
         <section className="runtime-table-wrap">
+          <div className="runtime-table-card-head">
+            <div className="runtime-table-head-copy">
+              <strong>实时变量总览</strong>
+            </div>
+            <div className="runtime-toolbar-meta">
+              <span>{runtimeRows.length} 条变量</span>
+              <span>{loading ? '刷新中' : statusMessage}</span>
+            </div>
+          </div>
           <div className="runtime-table-shell">
             <table className="runtime-table project-table">
               <colgroup>
                 <col style={{ width: '54px' }} />
-                <col style={{ width: '320px' }} />
-                <col style={{ width: '92px' }} />
-                <col style={{ width: '106px' }} />
-                <col style={{ width: '86px' }} />
-                <col style={{ width: '164px' }} />
-                <col style={{ width: '136px' }} />
-                <col />
-                <col style={{ width: '132px' }} />
-                <col style={{ width: '96px' }} />
-                <col style={{ width: '96px' }} />
+                <col style={{ width: '350px' }} />
+                <col style={{ width: '110px' }} />
+                <col style={{ width: '98px' }} />
+                <col style={{ width: '76px' }} />
+                <col style={{ width: '176px' }} />
+                <col style={{ width: '148px' }} />
+                <col style={{ width: '370px' }} />
+                <col style={{ width: '112px' }} />
+                <col style={{ width: '84px' }} />
+                <col style={{ width: '84px' }} />
               </colgroup>
               <thead>
                 <tr>
@@ -2859,7 +2882,7 @@ function App() {
                       </td>
                       <td className="time-cell">{time}</td>
                       <td>
-                        <span className="project-pill">{group}</span>
+                        <span className={`project-pill ${getRuntimeGroupTone(group)}`}>{group}</span>
                       </td>
                       <td className="subtle">{isLocalVariableTag(tag) ? '-' : (tag.nodeId || '-')}</td>
                       <td>
@@ -2868,11 +2891,13 @@ function App() {
                             <input
                               value={writeDrafts[tag.id] ?? ''}
                               onChange={(e) => setWriteDrafts((current) => ({ ...current, [tag.id]: e.target.value }))}
-                              placeholder="写入值"
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && savingTagId !== tag.id) {
+                                  e.preventDefault()
+                                  void handleWrite(tag.id)
+                                }
+                              }}
                             />
-                            <button type="button" className="write-mini" onClick={() => void handleWrite(tag.id)} disabled={savingTagId === tag.id}>
-                              {savingTagId === tag.id ? '...' : '写入'}
-                            </button>
                           </div>
                         ) : (
                           <span className="subtle">只读</span>
@@ -3154,7 +3179,6 @@ function App() {
   )
 
   function matchesBrowseNode(node: BrowseNode) {
-
     const keyword = browserSearch.trim().toLowerCase()
     if (!keyword) return true
     return [node.displayName, node.browseName, node.nodeId, node.dataType ?? ''].some((item) => item.toLowerCase().includes(keyword))
@@ -3612,7 +3636,7 @@ function App() {
             <div className="login-success">
               <strong>当前已登录用户：ZXC</strong>
               <p>你现在可以使用“标签”、“订阅”和“报表配置”三项功能。</p>
-              <button type="button" className="login-submit" onClick={handleLogout}>退出登录</button>
+              <button type="button" className="login-submit" onClick={handleLogout}>注销</button>
             </div>
           ) : (
             <form className="login-form" onSubmit={handleLoginSubmit} autoComplete="off">
@@ -3675,9 +3699,9 @@ function App() {
   if (view === 'rework') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{reworkPage}</main></div>
   if (view === 'reworkConfig') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{reworkConfigPage}</main></div>
   if (view === 'reworkRecords') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{reworkRecordsPage}</main></div>
-  if (view === 'runtime') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? runtimePage : loginPage}</main></div>
+  if (view === 'runtime') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{runtimePage}</main></div>
 
-  if (view === 'tags') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? tagsPage : loginPage}</main></div>
+  if (view === 'tags') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{tagsPage}</main></div>
   if (view === 'reportConfig') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? reportConfigPage : loginPage}</main></div>
   if (view === 'recipeDj' || view === 'recipeQyj') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{recipePage}</main></div>
   return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{view === 'help' ? helpPage : loginPage}</main></div>

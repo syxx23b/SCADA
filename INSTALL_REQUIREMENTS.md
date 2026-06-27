@@ -83,6 +83,13 @@
 - Default installer product name: `smScada`
 - Default API port: `5000`
 
+## 7.1 Typography
+
+- The web application must use `HarmonyOS Sans SC Medium` as the global first-priority font.
+- Recommended global web font stack:
+  `"HarmonyOS Sans SC Medium", "HarmonyOS Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif`
+- New UI work must not introduce `Segoe UI` as the preferred application font for web pages.
+
 ## 8. Installer Output
 
 - The installer file name must include a timestamp.
