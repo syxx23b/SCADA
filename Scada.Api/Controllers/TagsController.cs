@@ -355,9 +355,17 @@ public sealed class TagsController : ControllerBase
             return BadRequest(new TagExcelReplaceResultDto(rows.Count, 0, 0, duplicateErrors));
         }
 
-        var removed = await _dbContext.Tags.CountAsync(cancellationToken);
+        var existingTags = await _dbContext.Tags.ToListAsync(cancellationToken);
+        var preservedLocalTags = existingTags
+            .Where(item => IsLocalGroupKey(item.GroupKey))
+            .ToList();
+        var removableTags = existingTags
+            .Where(item => !IsLocalGroupKey(item.GroupKey))
+            .ToList();
+        var removed = removableTags.Count;
+
         await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-        _dbContext.Tags.RemoveRange(_dbContext.Tags);
+        _dbContext.Tags.RemoveRange(removableTags);
         await _dbContext.SaveChangesAsync(cancellationToken);
         _dbContext.Tags.AddRange(importedTags);
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -367,7 +375,10 @@ public sealed class TagsController : ControllerBase
 
         foreach (var device in devices)
         {
-            var deviceTags = importedTags.Where(item => item.DeviceId == device.Id && item.Enabled).ToList();
+            var deviceTags = importedTags
+                .Where(item => item.DeviceId == device.Id && item.Enabled)
+                .Concat(preservedLocalTags.Where(item => item.DeviceId == device.Id && item.Enabled))
+                .ToList();
             await _runtimeCoordinator.RefreshSubscriptionsAsync(device, deviceTags, cancellationToken);
         }
 

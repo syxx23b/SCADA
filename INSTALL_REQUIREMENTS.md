@@ -90,6 +90,18 @@
   `"HarmonyOS Sans SC Medium", "HarmonyOS Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif`
 - New UI work must not introduce `Segoe UI` as the preferred application font for web pages.
 
+## 7.2 Frontend Development Cache Strategy
+
+- The backend-served `index.html` must always return no-cache headers in local development and integrated runtime:
+  `Cache-Control: no-store, no-cache, must-revalidate, max-age=0`
+- Fingerprinted frontend assets (`index-[hash].js`, `index-[hash].css`) should remain cacheable; only the HTML entry must be forced fresh.
+- During day-to-day frontend development, prefer the Vite dev server at `http://localhost:5173` instead of validating UI changes only through backend-served `wwwroot`.
+- Use backend-served `http://localhost:5000` mainly for integrated verification of API proxying, SignalR, static publish output, and final deployment behavior.
+- If a UI change appears stale in the integrated view, the standard verification order is:
+  1. Confirm the latest build updated `Scada.Api/wwwroot/index.html`
+  2. Reopen the browser tab
+  3. Restart the backend host only if stale HTML still persists
+
 ## 8. Installer Output
 
 - The installer file name must include a timestamp.

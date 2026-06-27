@@ -714,9 +714,20 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
                 definition.TagId,
                 value.Value,
                 value.StatusCode.ToString(),
-                value.SourceTimestamp == DateTime.MinValue ? null : new DateTimeOffset(value.SourceTimestamp),
-                value.ServerTimestamp == DateTime.MinValue ? null : new DateTimeOffset(value.ServerTimestamp)));
+                NormalizeOpcUaTimestamp(value.SourceTimestamp),
+                NormalizeOpcUaTimestamp(value.ServerTimestamp)));
         }
+    }
+
+    private static DateTimeOffset? NormalizeOpcUaTimestamp(DateTime value)
+    {
+        if (value == DateTime.MinValue)
+        {
+            return null;
+        }
+
+        var timestamp = new DateTimeOffset(value);
+        return timestamp.Year <= 1971 ? null : timestamp;
     }
 
     private void UpdateState(OpcUaConnectionState state, string message)

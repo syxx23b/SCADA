@@ -248,18 +248,14 @@ function FaultSidebarIcon() {
   )
 }
 
-function DownloadSidebarIcon() {
+function RecipeSidebarIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path
-        d="M4.8 11.6H11.5C13 11.6 14.2 10.4 14.2 8.9C14.2 7.5 13.1 6.4 11.8 6.2C11.5 4.2 9.8 2.7 7.7 2.7C5.5 2.7 3.7 4.4 3.6 6.6C2.3 6.9 1.4 8 1.4 9.3C1.4 10.6 2.4 11.6 3.7 11.6H4.8Z"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path d="M8 6.4V12" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      <path d="M5.9 9.9L8 12L10.1 9.9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      <rect x="2.4" y="2.5" width="11.2" height="11" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M4.7 5.2H11.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <path d="M4.7 7.4H11.3" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <circle cx="5.8" cy="10.6" r="1" fill="currentColor" />
+      <circle cx="10.2" cy="10.6" r="1" fill="currentColor" />
     </svg>
   )
 }
@@ -328,17 +324,16 @@ const baseSidebarItems: SidebarItem[] = [
   { key: 'rework', label: '返修管理', icon: <ReworkManageIcon set={REWORK_ICON_SET} /> },
   { key: 'reworkConfig', label: '返修组态', icon: <ReworkConfigIcon set={REWORK_ICON_SET} /> },
   { key: 'reworkRecords', label: '返修记录', icon: <ReworkRecordIcon set={REWORK_ICON_SET} /> },
-  { key: 'recipeDj', label: '配方-电机泵', icon: <DownloadSidebarIcon /> },
-  { key: 'recipeQyj', label: '配方-汽油机', icon: <DownloadSidebarIcon /> },
+  { key: 'recipeDj', label: '配方-电机泵', icon: <RecipeSidebarIcon /> },
+  { key: 'recipeQyj', label: '配方-汽油机', icon: <RecipeSidebarIcon /> },
   { key: 'help', label: '帮助', icon: '？' },
 ]
 
-const alwaysVisibleSidebarItems: SidebarItem[] = [
-  { key: 'runtime', label: '标签', icon: <TagSidebarIcon /> },
-  { key: 'tags', label: '订阅', icon: '◎' },
-]
+const alwaysVisibleSidebarItems: SidebarItem[] = []
 
 const protectedSidebarItems: SidebarItem[] = [
+  { key: 'runtime', label: '标签', icon: <TagSidebarIcon /> },
+  { key: 'tags', label: '订阅', icon: '◎' },
   { key: 'reportConfig', label: '报表配置', icon: <ReportConfigSidebarIcon /> },
 ]
 
@@ -379,7 +374,8 @@ function getInitialView(): ViewKey {
 const FACTORY_REPORT_PARAMS = 'ref_t=design&ref_c=5d7ff465-26b4-4e0c-baca-346f29bfb3c7'
 const FACTORY_REPORT_ENCODED_PATH = 'QYJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt'
 const FACTORY_REPORT_CN_PATH = 'QYJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt'
-const REPORT_SERVER_BASE_URL = ''
+const REPORT_PROXY_BASE_URL = ''
+const REPORT_SERVER_BASE_URL = 'http://localhost:8080'
 const REPORT_VISIBILITY_STORAGE_KEY = 'scada-web.report-visibility'
 const STATION_COUNT_STORAGE_KEY = 'scada-web.station-count'
 const DEFAULT_STATION_COUNT = 4
@@ -405,49 +401,49 @@ const REPORTS: Record<ReportKey, { title: string; subtitle: string; iframeUrl: s
   factoryReportDj: {
     title: '出厂记录-电机泵',
     subtitle: 'DJ report integration test',
-    iframeUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=DJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+    iframeUrl: `${REPORT_PROXY_BASE_URL}/webroot/decision/view/report?viewlet=DJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
     openUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=DJ%25E5%2587%25BA%25E5%258E%2582%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
   },
   factoryReportMotor: {
     title: 'Factory Report-Motor',
     subtitle: 'Motor report integration test',
-    iframeUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
+    iframeUrl: `${REPORT_PROXY_BASE_URL}/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
     openUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
   },
   factoryReportQyj: {
     title: '出厂记录-汽油机',
     subtitle: 'QYJ report integration test',
-    iframeUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=${FACTORY_REPORT_CN_PATH}&${FACTORY_REPORT_PARAMS}`,
+    iframeUrl: `${REPORT_PROXY_BASE_URL}/webroot/decision/view/report?viewlet=${FACTORY_REPORT_CN_PATH}&${FACTORY_REPORT_PARAMS}`,
     openUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=${FACTORY_REPORT_CN_PATH}&${FACTORY_REPORT_PARAMS}`,
   },
   factoryReportEngine: {
     title: 'Factory Report-Engine',
     subtitle: 'Engine report integration test',
-    iframeUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
+    iframeUrl: `${REPORT_PROXY_BASE_URL}/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
     openUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=${FACTORY_REPORT_ENCODED_PATH}&${FACTORY_REPORT_PARAMS}`,
   },
   enduranceReportDj: {
     title: '耐久报表-电机泵',
     subtitle: 'DJ endurance report integration test',
-    iframeUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+    iframeUrl: `${REPORT_PROXY_BASE_URL}/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
     openUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
   },
   enduranceReportMotor: {
     title: 'Endurance Report-Motor',
     subtitle: 'DJ endurance report integration test',
-    iframeUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
+    iframeUrl: `${REPORT_PROXY_BASE_URL}/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
     openUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=DJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
   },
   enduranceReportQyj: {
     title: '耐久报表-汽油机',
     subtitle: 'QYJ endurance report integration test',
-    iframeUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
+    iframeUrl: `${REPORT_PROXY_BASE_URL}/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
     openUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8.cpt&${FACTORY_REPORT_PARAMS}`,
   },
   enduranceReportEngine: {
     title: 'Endurance Report-Engine',
     subtitle: 'QYJ endurance report integration test',
-    iframeUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
+    iframeUrl: `${REPORT_PROXY_BASE_URL}/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
     openUrl: `${REPORT_SERVER_BASE_URL}/webroot/decision/view/report?viewlet=QYJ%25E8%2580%2590%25E4%25B9%2585%25E6%25B5%258B%25E8%25AF%2595%25E6%258A%25A5%25E8%25A1%25A8Eng.cpt&${FACTORY_REPORT_PARAMS}`,
   },
 }
@@ -1025,7 +1021,6 @@ function App() {
   const [savingDevice, setSavingDevice] = useState(false)
   const [statusMessage, setStatusMessage] = useState('系统已就绪')
   const [groupFilter, setGroupFilter] = useState('all')
-  const [selectedTagGroupFilter, setSelectedTagGroupFilter] = useState('all')
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [brandAnimTick, setBrandAnimTick] = useState(0)
   const [reportFrameLoaded, setReportFrameLoaded] = useState(false)
@@ -1106,14 +1101,6 @@ function App() {
 
     return tagRows.filter((tag) => tag.deviceId === activeDeviceId && !isLocalVariableTag(tag))
   }, [activeDeviceId, isLocalDeviceSelected, tagRows])
-  const selectedDeviceTagGroups = useMemo(() => {
-    const values = selectedDeviceTags.map((tag) => getResolvedGroup(activeDeviceName, tag))
-    return sortGroupOptions(values)
-  }, [activeDeviceName, selectedDeviceTags])
-  const filteredSelectedDeviceTags = useMemo(() => {
-    if (selectedTagGroupFilter === 'all') return selectedDeviceTags
-    return selectedDeviceTags.filter((tag) => getResolvedGroup(activeDeviceName, tag) === selectedTagGroupFilter)
-  }, [activeDeviceName, selectedDeviceTags, selectedTagGroupFilter])
   const batchRows = batchDrafts
   const activeRecipeType: RecipeTypeKey = view === 'recipeQyj' ? 'QYJRecipe' : 'DJRecipe'
   const isSiemensDraft = deviceDraft.driverKind === 'SiemensS7'
@@ -1535,11 +1522,12 @@ function App() {
       key,
       title: REPORTS[key].title,
       subtitle: REPORTS[key].subtitle,
+      actualUrl: REPORTS[key].openUrl,
       visible: reportVisibility[key],
     })),
-    { key: 'rework' as const, title: '返修管理', subtitle: '返修服务页面入口', visible: reportVisibility.rework },
-    { key: 'reworkConfig' as const, title: '返修组态', subtitle: '返修服务页面入口', visible: reportVisibility.reworkConfig },
-    { key: 'reworkRecords' as const, title: '返修记录', subtitle: '返修服务页面入口', visible: reportVisibility.reworkRecords },
+    { key: 'rework' as const, title: '返修管理', subtitle: '返修服务页面入口', actualUrl: '-', visible: reportVisibility.rework },
+    { key: 'reworkConfig' as const, title: '返修组态', subtitle: '返修服务页面入口', actualUrl: '-', visible: reportVisibility.reworkConfig },
+    { key: 'reworkRecords' as const, title: '返修记录', subtitle: '返修服务页面入口', actualUrl: '-', visible: reportVisibility.reworkRecords },
   ]
   const groups = useMemo(() => {
     const values = runtime.tags.map((tag) => getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag))
@@ -2161,11 +2149,16 @@ function App() {
   }, [])
 
   useEffect(() => { if (!selectedDeviceId && activeDeviceId) setSelectedDeviceId(activeDeviceId) }, [activeDeviceId, selectedDeviceId])
-  useEffect(() => { setSelectedTagGroupFilter('all') }, [activeDeviceId])
   useEffect(() => {
     if (!isAuthenticated && view === 'reportConfig') {
       setView('login')
       setStatusMessage('请先登录后再访问报表配置页面')
+    }
+  }, [isAuthenticated, view])
+  useEffect(() => {
+    if (!isAuthenticated && (view === 'runtime' || view === 'tags')) {
+      setView('login')
+      setStatusMessage(view === 'runtime' ? '请先登录后再访问标签页面' : '请先登录后再访问订阅页面')
     }
   }, [isAuthenticated, view])
   useEffect(() => {
@@ -2294,31 +2287,6 @@ function App() {
     focusBatchSection()
   }
 
-  function addManualBatchAddress() {
-    if (!activeDeviceId) {
-      setStatusMessage('请先选择设备')
-      return
-    }
-
-    setBatchDrafts((current) => [
-      ...current,
-      {
-        deviceId: activeDeviceId,
-        nodeId: '',
-        browseName: '',
-        displayName: '',
-        dataType: 'Boolean',
-        samplingIntervalMs: 200,
-        publishingIntervalMs: 200,
-        allowWrite: true,
-        enabled: true,
-        groupKey: '未分组',
-      },
-    ])
-    setStatusMessage('已新增空白地址行，请在批量配置中填写绝对地址')
-    focusBatchSection()
-  }
-
   async function handleExportAllTagsExcel() {
     try {
       setLoading(true)
@@ -2428,17 +2396,6 @@ function App() {
     }
   }
 
-  function editRuntimeTag(tag: TagDefinition) {
-    const isLocalTag = isLocalVariableTag(tag)
-    const deviceName = isLocalTag ? 'Local' : (runtimeNameById[tag.deviceId] || activeDeviceName)
-    setSelectedDeviceId(isLocalTag ? (localDevice?.id ?? LOCAL_DEVICE_ID) : tag.deviceId)
-    setBatchDrafts([draftFromTag(tag, deviceName)])
-    focusBatchSection()
-  }
-  async function removeRuntimeTag(id: string) { try { await deleteTag(id); await loadWorkspace(); await refreshRuntime(); setStatusMessage('订阅变量已删除') } catch (error) { setStatusMessage(error instanceof Error ? error.message : '删除失败') } }
-
-
-
   function handleSidebarClick(key: SidebarKey) {
     if (isSidebarCollapsed) {
       return
@@ -2458,16 +2415,11 @@ function App() {
 
   useEffect(() => {
     if (!isReportView) return
-    setReportFrameNonce((n) => n + 1)
-  }, [view, isReportView])
-
-  useEffect(() => {
-    if (!isReportView) return
     setReportFrameLoaded(false)
     setReportFrameTimeout(false)
     const timer = window.setTimeout(() => {
       setReportFrameTimeout(true)
-    }, 8000)
+    }, 20000)
     return () => window.clearTimeout(timer)
   }, [isReportView, view, reportFrameNonce])
 
@@ -2828,13 +2780,12 @@ function App() {
             <table className="runtime-table project-table">
               <colgroup>
                 <col style={{ width: '54px' }} />
-                <col style={{ width: '350px' }} />
+                <col style={{ width: '520px' }} />
                 <col style={{ width: '110px' }} />
                 <col style={{ width: '98px' }} />
                 <col style={{ width: '76px' }} />
                 <col style={{ width: '176px' }} />
                 <col style={{ width: '148px' }} />
-                <col style={{ width: '370px' }} />
                 <col style={{ width: '112px' }} />
                 <col style={{ width: '84px' }} />
                 <col style={{ width: '84px' }} />
@@ -2855,7 +2806,6 @@ function App() {
                       </select>
                     </div>
                   </th>
-                  <th>NodeId</th>
                   <th>写入</th>
                   <th>订阅周期</th>
                   <th>发布周期</th>
@@ -2869,6 +2819,7 @@ function App() {
                       <td className="row-index">{risk}</td>
                       <td>
                         <div className="project-name">{tag.displayName}</div>
+                        <div className="project-nodeid">{isLocalVariableTag(tag) ? '-' : (tag.nodeId || '-')}</div>
                       </td>
                       <td>
                         <div className="project-value">{displayValue}</div>
@@ -2884,7 +2835,6 @@ function App() {
                       <td>
                         <span className={`project-pill ${getRuntimeGroupTone(group)}`}>{group}</span>
                       </td>
-                      <td className="subtle">{isLocalVariableTag(tag) ? '-' : (tag.nodeId || '-')}</td>
                       <td>
                         {tag.allowWrite ? (
                           <div className="write-cell">
@@ -3228,73 +3178,86 @@ function App() {
   }
 
   const tagsPage = (
-    <section className="page-shell">
-      <header className="page-header">
-        <div className="page-copy">
-          <h1>变量订阅</h1>
-          <p>{isSiemensDevice ? 'Siemens S7 使用绝对地址模式。请手动新增地址并填写 NodeId（如 DB1.DBX0.0、DB1.DBW2）。' : '逐级浏览 OPC UA 变量目录，勾选叶子变量后进入批量配置。'}</p>
-        </div>
-        <div className="page-meta">
-          <span className="status-line">{activeDeviceName} · {selectedBrowseNodes.length} 个已勾选</span>
-          <button type="button" className="soft-action" onClick={() => void loadWorkspace()} disabled={loading}>
-            {loading ? '刷新中' : '刷新'}
-          </button>
-        </div>
-      </header>
+    <section className="page-shell tags-page-shell">
+      <input
+        ref={importTagsFileInputRef}
+        type="file"
+        accept=".xlsx"
+        onChange={(event) => void handleImportTagsExcel(event)}
+        style={{ display: 'none' }}
+      />
 
-      <section className="toolbar-row tags-toolbar">
-        <input
-          ref={importTagsFileInputRef}
-          type="file"
-          accept=".xlsx"
-          onChange={(event) => void handleImportTagsExcel(event)}
-          style={{ display: 'none' }}
-        />
-        <select value={activeDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)}>
-          <option value="">选择设备</option>
-          {selectableDevices.map((device) => (
-            <option key={device.id} value={device.id}>
-              {device.name}
-            </option>
-          ))}
-        </select>
-        <input value={browserSearch} onChange={(e) => setBrowserSearch(e.target.value)} placeholder="搜索目录 / 变量 / NodeId" />
-        {isSiemensDevice ? null : (
-          <button type="button" className="soft-action" onClick={() => setExpandedBrowseNodes({})}>
-            折叠全部
-          </button>
-        )}
-        {isSiemensDevice ? null : (
-          <button type="button" className="soft-action" onClick={() => void loadBrowse(activeDeviceId, null, true)}>
-            刷新目录
-          </button>
-        )}
-        {isSiemensDevice ? (
-          <button type="button" className="soft-action" onClick={addManualBatchAddress} disabled={!activeDeviceId}>
-            手动新增地址
-          </button>
-        ) : null}
-        <button type="button" className="soft-action" onClick={() => void handleExportAllTagsExcel()} disabled={loading}>
-          导出 Excel
-        </button>
-        <button type="button" className="soft-action" onClick={handlePickImportTagsExcel} disabled={loading}>
-          导入替换
-        </button>
-        <button type="button" className="soft-action" onClick={() => setSelectedBrowseNodes([])}>
-          清空勾选
-        </button>
+      <section className="tags-hero-grid">
+        <article className="tags-hero-card">
+          <div className="runtime-title-wrap">
+            <div className="runtime-title-copy">
+              <span className="runtime-title-kicker">TAG SUBSCRIPTION</span>
+              <h1>变量订阅</h1>
+            </div>
+          </div>
+        </article>
+
+        <div className="tags-hero-stats" aria-label="变量订阅汇总">
+          <article className="summary-card">
+            <span className="summary-label">已勾选变量</span>
+            <strong>{selectedBrowseNodes.length}</strong>
+            <span className="summary-caption">等待加入批量配置</span>
+          </article>
+          <article className="summary-card">
+            <span className="summary-label">批量配置</span>
+            <strong>{batchRows.length}</strong>
+            <span className="summary-caption">当前编辑列表</span>
+          </article>
+          <article className="summary-card">
+            <span className="summary-label">已订阅变量</span>
+            <strong>{selectedDeviceTags.length}</strong>
+            <span className="summary-caption">当前设备范围</span>
+          </article>
+        </div>
       </section>
 
-      <section className="content-strip tags-layout">
-        <div className="browser-panel">
+      <section className="tags-dashboard-grid">
+        <div className="tags-left-column">
+          <section className="tags-control-card">
+            <div className="panel-head">
+              <div>
+                <div className="panel-title">订阅工具</div>
+              </div>
+              <div className="panel-actions panel-actions-in-head">
+                <span className="status-line">{loading ? '刷新中' : statusMessage}</span>
+              </div>
+            </div>
+            <div className="tags-control-grid">
+              <label>
+                <span>选择设备</span>
+                <select value={activeDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)}>
+                  <option value="">选择设备</option>
+                  {selectableDevices.map((device) => (
+                    <option key={device.id} value={device.id}>
+                      {device.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="tags-search-field">
+                <span>目录搜索</span>
+                <input value={browserSearch} onChange={(e) => setBrowserSearch(e.target.value)} placeholder="搜索目录 / 变量 / NodeId" />
+              </label>
+            </div>
+            <div className="tags-control-actions">
+              <button type="button" className="soft-action tags-tool-button tags-tool-button-export" onClick={() => void handleExportAllTagsExcel()} disabled={loading}>
+                导出 Excel
+              </button>
+              <button type="button" className="soft-action tags-tool-button tags-tool-button-import" onClick={handlePickImportTagsExcel} disabled={loading}>
+                导入替换
+              </button>
+            </div>
+          </section>
+
+          <div className="browser-panel tags-browser-panel">
           <div className="panel-head">
             <div>
               <div className="panel-title">{isSiemensDevice ? 'DB 标签列表' : '目录树'}</div>
-              <div className="panel-subtitle">
-                {isSiemensDevice
-                  ? '绝对地址模式下不依赖在线目录树，可参考下方样例地址直接手工填写。'
-                  : '目录节点展开显示，叶子节点才允许勾选'}
-              </div>
             </div>
             <div className="panel-actions panel-actions-in-head">
               <span className="status-line">
@@ -3320,14 +3283,14 @@ function App() {
               renderBrowseTree(null)
             )}
           </div>
+          </div>
         </div>
 
-        <div className="detail-column">
-          <section className="detail-panel detail-panel-batch" ref={batchSectionRef}>
+        <div className="detail-column tags-right-column">
+          <section className="detail-panel detail-panel-batch tags-batch-panel" ref={batchSectionRef}>
             <div className="panel-head panel-head-stack">
               <div>
                 <div className="panel-title">批量配置</div>
-                <div className="panel-subtitle">统一修改显示名称、分组和订阅参数，保存后立即刷新订阅</div>
               </div>
               <div className="batch-inline-actions">
                 <span className="status-line">{activeDeviceName} · {batchRows.length} 条待配置</span>
@@ -3393,63 +3356,6 @@ function App() {
             </div>
           </section>
 
-          <section className="detail-panel">
-            <div className="panel-head">
-              <div>
-                <div className="panel-title">已订阅变量</div>
-                <div className="panel-subtitle">当前设备下的已配置点位</div>
-              </div>
-              <div className="panel-actions panel-actions-in-head">
-                <span className="status-line">{filteredSelectedDeviceTags.length}/{selectedDeviceTags.length} 个</span>
-                <select className="panel-filter-select" value={selectedTagGroupFilter} onChange={(e) => setSelectedTagGroupFilter(e.target.value)} aria-label="按分组筛选已订阅变量">
-                  <option value="all">全部分组</option>
-                  {selectedDeviceTagGroups.filter((g) => g !== 'all').map((g) => <option key={g} value={g}>{g}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="table-shell compact-shell">
-              <div className="table-scroll">
-                <table className="list-table">
-                  <colgroup>
-                    <col />
-                    <col style={{ width: '100px' }} />
-                    <col style={{ width: '100px' }} />
-                    <col style={{ width: '132px' }} />
-                  </colgroup>
-                  <thead>
-                    <tr>
-                      <th>名称</th>
-                      <th>分组</th>
-                      <th>写入</th>
-                      <th>操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredSelectedDeviceTags.map((tag) => (
-                      <tr key={tag.id} className="list-row">
-                        <td>
-                          <strong>{tag.displayName}</strong>
-                          <div className="node-meta">{isLocalVariableTag(tag) ? '-' : (tag.nodeId || '-')}</div>
-                        </td>
-                        <td>{getResolvedGroup(activeDeviceName, tag)}</td>
-                        <td>{tag.allowWrite ? '可写' : '只读'}</td>
-                        <td>
-                          <div className="row-actions">
-                            <button type="button" className="mini-button" onClick={() => editRuntimeTag(tag)}>
-                              编辑
-                            </button>
-                            <button type="button" className="mini-button danger" onClick={() => void removeRuntimeTag(tag.id)}>
-                              删除
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
         </div>
       </section>
 
@@ -3512,35 +3418,27 @@ function App() {
     setReportVisibility((current) => ({ ...current, [key]: visible }))
   }
 
-  function resetReportServiceVisibility() {
-    setReportVisibility(() => MENU_VISIBILITY_KEYS.reduce((acc, key) => {
-      acc[key] = true
-      return acc
-    }, {} as Record<MenuVisibilityKey, boolean>))
-  }
-
   const reportConfigPage = (
-    <section className="page-shell">
-      <header className="page-header">
-        <div className="page-copy">
-          <h1>报表配置</h1>
-          <p>配置报表服务下各报表是否在侧边栏显示，设置会自动保存</p>
-        </div>
-        <div className="panel-actions panel-actions-in-head">
-          <span className="status-line">已显示 {reportConfigItems.filter((item) => item.visible).length} / {reportConfigItems.length}</span>
-          <button type="button" className="primary-action" onClick={resetReportServiceVisibility}>全部恢复显示</button>
-        </div>
-      </header>
-
-      <section className="content-strip">
-        <div className="config-card">
-          <div className="config-card-head">
-            <div className="config-card-copy">
-              <div className="config-card-title">报表服务</div>
-              <div className="config-card-subtitle">仅登录后可见；开关关闭后，侧边栏将隐藏对应报表入口</div>
+    <section className="page-shell report-page-shell report-config-shell">
+      <section className="report-config-topbar">
+        <article className="tags-hero-card report-hero-card">
+          <div className="runtime-title-wrap">
+            <div className="runtime-title-copy">
+              <span className="runtime-title-kicker">REPORT CONFIG</span>
+              <h1>报表配置</h1>
             </div>
-            <label className="station-count-control">
-              <span>工位数量</span>
+          </div>
+        </article>
+
+        <article className="report-config-station-card">
+          <div className="panel-head">
+            <div>
+              <div className="panel-title">工位数量</div>
+            </div>
+          </div>
+          <div className="report-config-form">
+            <label className="station-count-control report-station-control">
+              <span>选择工位数量</span>
               <input
                 type="number"
                 min={1}
@@ -3550,6 +3448,19 @@ function App() {
               />
             </label>
           </div>
+        </article>
+      </section>
+
+      <section className="report-config-grid report-config-grid-single">
+        <article className="detail-panel report-config-list-card">
+          <div className="panel-head">
+            <div>
+              <div className="panel-title">报表服务</div>
+            </div>
+            <div className="panel-actions panel-actions-in-head">
+              <span className="status-line">设置会自动保存</span>
+            </div>
+          </div>
 
           <div className="report-config-list">
             {reportConfigItems.map((item) => (
@@ -3558,7 +3469,16 @@ function App() {
                   <strong>{item.title}</strong>
                   <span>{item.subtitle}</span>
                 </span>
-                <span className="report-config-toggle">
+                <span className="report-config-url">
+                  {item.actualUrl === '-' ? (
+                    <span className="report-config-url-text report-config-url-empty">-</span>
+                  ) : (
+                    <a className="report-config-url-link" href={item.actualUrl} target="_blank" rel="noreferrer">
+                      {item.actualUrl}
+                    </a>
+                  )}
+                </span>
+                <span className={`report-config-toggle${item.visible ? ' is-visible' : ''}`}>
                   <input
                     type="checkbox"
                     checked={item.visible}
@@ -3569,7 +3489,7 @@ function App() {
               </label>
             ))}
           </div>
-        </div>
+        </article>
       </section>
 
       <div className="toast-line">{statusMessage}</div>

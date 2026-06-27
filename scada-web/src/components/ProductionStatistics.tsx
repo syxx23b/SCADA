@@ -242,8 +242,13 @@ export function ProductionStatistics({
 
   return (
     <section className="production-page">
-      <header className="production-header">
-        <div className="production-title">产量统计</div>
+      <header className="production-header production-header-bilingual">
+        <div className="production-title-card">
+          <div className="runtime-title-copy">
+            <span className="runtime-title-kicker">PRODUCTION</span>
+            <div className="production-title">产量统计</div>
+          </div>
+        </div>
       </header>
 
       {!data ? (

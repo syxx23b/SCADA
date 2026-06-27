@@ -163,7 +163,7 @@ export function EfficiencyAnalysis({
                       </div>
                     ))}
                   </div>
-                  <div className="efficiency-track-stack" role="img" aria-label={`${lane.stationName} 鏈€杩?12 灏忔椂鐘舵€佺敇鐗瑰浘`}>
+                  <div className="efficiency-track-stack" role="img" aria-label={`${lane.stationName} 最近 12 小时状态甘特图`}>
                     {LEGEND_ITEMS.map((item) => (
                       <div key={`${lane.faceplateIndex}-${item.key}`} className={`efficiency-track-row ${item.key}`} data-label={item.label}>
                         <div className="efficiency-track" aria-hidden="true">
@@ -190,7 +190,6 @@ export function EfficiencyAnalysis({
                     ))}
                   </div>
                 </div>
-
               </article>
             )
           })}

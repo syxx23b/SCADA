@@ -96,7 +96,34 @@ app.UseCors();
 
 app.UseAuthorization();
 app.UseDefaultFiles();
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        if (string.Equals(context.File.Name, "index.html", StringComparison.OrdinalIgnoreCase))
+        {
+            ApplyNoCacheHeaders(context.Context.Response);
+        }
+    }
+});
+
+app.Use(async (context, next) =>
+{
+    await next();
+
+    if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+    {
+        return;
+    }
+
+    var responseContentType = context.Response.ContentType ?? string.Empty;
+    if (!responseContentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
+    {
+        return;
+    }
+
+    ApplyNoCacheHeaders(context.Response);
+});
 
 app.MapControllers();
 app.MapMethods("/webroot/decision/{**path}", new[] { "GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS" }, ProxyReportAsync);
@@ -213,7 +240,9 @@ static async Task<IResult> WriteProxyResponseAsync(HttpContext context, HttpResp
         return Results.Empty;
     }
 
-    await responseMessage.Content.CopyToAsync(context.Response.Body, context.RequestAborted);
+    var payload = await responseMessage.Content.ReadAsByteArrayAsync(context.RequestAborted);
+    context.Response.ContentLength = payload.Length;
+    await context.Response.Body.WriteAsync(payload, context.RequestAborted);
     return Results.Empty;
 }
 
@@ -231,6 +260,13 @@ static async Task EnsureReportProxyAuthenticatedAsync(IServiceProvider services)
     {
         // If warmup fails, the proxy can still retry on demand.
     }
+}
+
+static void ApplyNoCacheHeaders(HttpResponse response)
+{
+    response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+    response.Headers.Pragma = "no-cache";
+    response.Headers.Expires = "0";
 }
 
 static string RewriteReportLocation(string location)

@@ -192,7 +192,6 @@ export function ReworkConfig({ onStatus }: { onStatus: (message: string) => void
     <section className="production-page rework-config-page">
       <header className="production-header">
         <div className="production-title">返修组态</div>
-        <div className="production-subtitle">建议按故障代码独立管理，维修措施全局管理并跨故障代码复用</div>
       </header>
 
       <div className="rework-config-shell">

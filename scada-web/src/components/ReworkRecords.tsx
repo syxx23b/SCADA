@@ -62,7 +62,6 @@ export function ReworkRecords({
     <section className="production-page rework-page">
       <header className="production-header">
         <div className="production-title">返修记录</div>
-        <div className="production-subtitle">按时间查询返修确认记录，并统计过去 12 个月每月返修数量</div>
       </header>
 
       <article className="production-table-card rework-result-card">
