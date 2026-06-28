@@ -4,7 +4,6 @@ using System.Management;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
-using System.Text;
 using System.ComponentModel;
 using System.ServiceProcess;
 
@@ -21,8 +20,6 @@ internal static class InstallerEngine
     private const int DirectoryDeleteRetryCount = 3;
     private const int DirectoryDeleteRetryDelayMilliseconds = 400;
     private static readonly string[] CandidateProcessNames = ["Scada.Api", "Scada.Launcher", "java", "javaw"];
-    private static readonly Encoding SystemCommandEncoding = Encoding.GetEncoding((int)GetOEMCP());
-
     public static void Install(InstallerOptions options, Action<string> log)
     {
         EnsureWindows();
@@ -464,8 +461,6 @@ internal static class InstallerEngine
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
-            StandardOutputEncoding = SystemCommandEncoding,
-            StandardErrorEncoding = SystemCommandEncoding,
         };
 
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Unable to start process: {fileName}");
@@ -483,20 +478,16 @@ internal static class InstallerEngine
 
             if (ignoreErrors)
             {
-                if (!string.IsNullOrWhiteSpace(stderr))
-                {
-                    log(stderr.Trim());
-                }
-
                 return;
             }
 
-            throw new InvalidOperationException($"{fileName} failed with exit code {process.ExitCode}.{Environment.NewLine}{stderr.Trim()}");
-        }
+            var detail = string.IsNullOrWhiteSpace(stderr) ? stdout.Trim() : stderr.Trim();
+            if (string.IsNullOrWhiteSpace(detail))
+            {
+                throw new InvalidOperationException($"{fileName} failed with exit code {process.ExitCode}.");
+            }
 
-        if (!string.IsNullOrWhiteSpace(stdout))
-        {
-            log(stdout.Trim());
+            throw new InvalidOperationException($"{fileName} failed with exit code {process.ExitCode}.{Environment.NewLine}{detail}");
         }
     }
 
@@ -523,9 +514,6 @@ internal static class InstallerEngine
             throw new InvalidOperationException("Administrator privileges are required. Please run the installer as administrator.");
         }
     }
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetOEMCP();
 }
 
 internal sealed class InstallerOptions
