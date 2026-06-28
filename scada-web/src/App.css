@@ -223,7 +223,7 @@ table {
 .dashboard-board-head.standby { background: rgba(236, 184, 35, 0.22); color: var(--dash-blue); }
 .dashboard-board-head.fault { background: rgba(227, 73, 83, 0.14); color: var(--dash-red); }
 .dashboard-board-head.disconnected { background: rgba(218, 220, 224, 0.6); color: #2f3742; }
-.dashboard-board-tag { font-size: var(--dash-font-lg); font-weight: 700; line-height: 1; }
+.dashboard-board-tag { font-size: var(--dash-font-lg); font-weight: 700; line-height: 1; color: rgb(0, 95, 135); }
 .dashboard-board-subtag { margin-top: 2px; font-size: var(--dash-font-sm); color: inherit; }
 .dashboard-grid { display: grid; grid-template-columns: 1fr; gap: 12px; background: #f8fafc; }
 .dashboard-grid > * { position: relative; }
