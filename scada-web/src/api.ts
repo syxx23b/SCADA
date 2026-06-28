@@ -18,6 +18,7 @@ import type {
   RepairRecordConfirmResponse,
   RepairRecordDailyResponse,
   RepairRecordListResponse,
+  SystemSettings,
   ReworkConfigGraphResponse,
   ReworkConfigEntriesResponse,
   ReworkMeasureNode,
@@ -218,6 +219,17 @@ export async function writeTag(tagId: string, value: string) {
 
 export function getRuntimeOverview() {
   return request<RuntimeOverview>('/api/runtime/overview')
+}
+
+export function getSystemSettings() {
+  return request<SystemSettings>('/api/system-settings')
+}
+
+export function updateSystemSettings(payload: SystemSettings) {
+  return request<SystemSettings>('/api/system-settings', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
 }
 
 export function touchRecipeSubscriptionLease(scope: string, durationSeconds = 20) {

@@ -241,6 +241,33 @@ public sealed class OpcUaSessionClient : IOpcUaSessionClient
 
             subscription.ApplyChanges();
         }
+
+        // Seed current values immediately after reapplying subscriptions so
+        // demand-loaded recipe tags do not stay blank until the next PLC change.
+        foreach (var definition in subscriptions)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            DataValue value;
+            try
+            {
+                value = _session!.ReadValue(NodeId.Parse(definition.NodeId));
+            }
+            catch (Exception readException)
+            {
+                _logger.LogDebug(readException, "Initial subscription read failed for {NodeId}.", definition.NodeId);
+                continue;
+            }
+
+            var observedAt = DateTimeOffset.UtcNow;
+            ValueChanged?.Invoke(this, new OpcUaValueChange(
+                _options?.DeviceId ?? Guid.Empty,
+                definition.TagId,
+                value.Value,
+                value.StatusCode.ToString(),
+                NormalizeOpcUaTimestamp(value.SourceTimestamp) ?? observedAt,
+                NormalizeOpcUaTimestamp(value.ServerTimestamp) ?? observedAt));
+        }
     }
 
     public async Task<OpcUaWriteResult> WriteAsync(OpcUaWriteRequest request, CancellationToken cancellationToken)

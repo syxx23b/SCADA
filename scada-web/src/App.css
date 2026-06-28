@@ -249,10 +249,11 @@ table {
 .main-value { font-weight: 700; color: #121826; }
 .subtle, .node-meta { color: #8a93a9; font-size: 0.72rem; }
 .node-meta { margin-top: 2px; }
-.status-pill { display: inline-flex; align-items: center; min-height: 20px; padding: 0 8px; font-size: 0.68rem; }
-.status-pill.normal { color: #13814d; }
+.status-pill { display: inline-flex; align-items: center; gap: 5px; min-height: 20px; padding: 0 8px; font-size: 0.68rem; font-weight: 700; }
+.status-pill .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+.status-pill.normal { color: #15964d; }
 .status-pill.warn { color: #b26a00; }
-.status-pill.fault { color: #c33a3a; }
+.status-pill.fault { color: #ca3333; }
 
 .group-pill { display: inline-flex; align-items: center; min-height: 20px; padding: 0 8px; font-size: 0.68rem; background: #eff2ff; color: #4250c8; }
 .inline-write { display: flex; gap: 8px; align-items: center; }
@@ -1414,6 +1415,21 @@ body,
   color: #2d9151 !important;
 }
 
+.runtime-device-status-strip .device-list-panel .status-pill.normal {
+  background: #e6f7ea !important;
+  color: #2d9151 !important;
+}
+
+.runtime-device-status-strip .device-list-panel .status-pill.warn {
+  background: #fff4e5 !important;
+  color: #b26a00 !important;
+}
+
+.runtime-device-status-strip .device-list-panel .status-pill.fault {
+  background: #ffe9e9 !important;
+  color: #ca3333 !important;
+}
+
 .runtime-table-head {
   margin: 0 18px !important;
   padding: 6px 0 8px !important;
@@ -1591,8 +1607,8 @@ body,
 }
 
 .project-status.red {
-  color: #dd5f67 !important;
-  background: #fff1f1 !important;
+  color: #ca3333 !important;
+  background: #ffe9e9 !important;
 }
 
 .time-cell {
@@ -3369,9 +3385,9 @@ body,
 
 .report-config-topbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) repeat(3, minmax(180px, 220px));
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .report-config-grid {
@@ -3433,6 +3449,10 @@ body,
   align-self: start;
 }
 
+.report-config-unit-card {
+  min-height: 100%;
+}
+
 .report-config-station-card .panel-head {
   display: flex;
   justify-content: space-between;
@@ -3449,6 +3469,37 @@ body,
   font-family: "HarmonyOS Sans SC Medium", "HarmonyOS Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
   font-weight: 800;
   color: rgb(0, 95, 135) !important;
+}
+
+.report-unit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 32px;
+  padding: 0 10px;
+  background: #f8fafc;
+}
+
+.report-unit-row span {
+  font-size: 12px;
+  color: #8b96aa;
+  font-weight: 700;
+}
+
+.report-unit-row-single {
+  min-height: 32px;
+}
+
+.report-unit-row select {
+  min-width: 112px;
+  height: 28px;
+  border: 0;
+  background: transparent;
+  color: #39455d;
+  font-size: 12px;
+  font-weight: 700;
+  outline: none;
 }
 
 .report-config-list-card {

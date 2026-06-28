@@ -112,6 +112,12 @@ export interface TagExcelReplaceResult {
   errors: string[]
 }
 
+export interface SystemSettings {
+  stationCount: number
+  pressureUnit: string
+  flowUnit: string
+}
+
 export interface EfficiencyTimelineSegment {
   faceplateIndex: number
   stationName: string

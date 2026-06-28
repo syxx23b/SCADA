@@ -3,9 +3,9 @@
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, connectDevice, createDevice, createTag, deleteDevice, deleteTag, disconnectDevice, exportAllTagsExcel, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, getFaultTodayByGw, getLatestReworkByTm, getRepairRecordDaily, getRepairRecords, getReworkHistoryByTm, importTagsExcelReplace, openVncTool, touchRecipeSubscriptionLease, updateDevice, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+import { browseDevice, connectDevice, createDevice, createTag, deleteDevice, deleteTag, disconnectDevice, exportAllTagsExcel, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, getFaultTodayByGw, getLatestReworkByTm, getRepairRecordDaily, getRepairRecords, getReworkHistoryByTm, getSystemSettings, importTagsExcelReplace, openVncTool, touchRecipeSubscriptionLease, updateDevice, updateSystemSettings, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
 
-import type { BrowseNode, DeviceConnection, DeviceFormState, EfficiencyTimelineResponse, FaultByGwResponse, ProductionByGwResponse, RepairRecordDailyResponse, RepairRecordListResponse, ReworkHistoryResponse, ReworkLookupResponse, RuntimeOverview, TagDefinition, TagFormState, TagSnapshot } from './types'
+import type { BrowseNode, DeviceConnection, DeviceFormState, EfficiencyTimelineResponse, FaultByGwResponse, ProductionByGwResponse, RepairRecordDailyResponse, RepairRecordListResponse, ReworkHistoryResponse, ReworkLookupResponse, RuntimeOverview, SystemSettings, TagDefinition, TagFormState, TagSnapshot } from './types'
 import { EfficiencyAnalysis } from './components/EfficiencyAnalysis'
 import { FaultAnalysis } from './components/FaultAnalysis'
 import { ProductionStatistics } from './components/ProductionStatistics'
@@ -380,6 +380,10 @@ const REPORT_VISIBILITY_STORAGE_KEY = 'scada-web.report-visibility'
 const STATION_COUNT_STORAGE_KEY = 'scada-web.station-count'
 const DEFAULT_STATION_COUNT = 4
 const MAX_STATION_COUNT = 64
+const DEFAULT_PRESSURE_UNIT = 'MPa'
+const DEFAULT_FLOW_UNIT = 'L/M'
+const PRESSURE_UNIT_OPTIONS = ['MPa', 'PSI', 'bar'] as const
+const FLOW_UNIT_OPTIONS = ['L/M', 'm³/h', 'GPM'] as const
 type FactoryReportKey = 'factoryReportDj' | 'factoryReportMotor' | 'factoryReportQyj' | 'factoryReportEngine'
 type ReportKey = FactoryReportKey | 'enduranceReportDj' | 'enduranceReportMotor' | 'enduranceReportQyj' | 'enduranceReportEngine'
 type ReworkServiceKey = 'rework' | 'reworkConfig' | 'reworkRecords'
@@ -757,8 +761,9 @@ function formatValue(tag: TagDefinition, snapshot: TagSnapshot | undefined, devi
 }
 
 function compactTimeText(snapshot: TagSnapshot | undefined) {
-  if (!snapshot?.sourceTimestamp) return '-'
-  const date = new Date(snapshot.sourceTimestamp)
+  const timestamp = snapshot?.sourceTimestamp || snapshot?.serverTimestamp
+  if (!timestamp) return '-'
+  const date = new Date(timestamp)
   if (Number.isNaN(date.getTime())) return '-'
   const yyyy = date.getFullYear()
   const mm = date.getMonth() + 1
@@ -806,6 +811,30 @@ function formatNumberWithUnit(value: number | null, unit: string, digits?: numbe
         ? value.toString()
         : value.toFixed(2)
   return unit ? `${rounded} ${unit}` : rounded
+}
+
+function convertPressureValue(value: number | null, unit: string) {
+  if (value === null) return null
+  if (unit === 'bar') return value * 10
+  if (unit === 'PSI') return value * 145.0377
+  return value
+}
+
+function convertFlowValue(value: number | null, unit: string) {
+  if (value === null) return null
+  if (unit === 'm³/h') return value * 0.06
+  if (unit === 'GPM') return value * 0.264172
+  return value
+}
+
+function convertSeries(points: HistoryPoint[], kind: 'pressure' | 'flow', unit: string) {
+  if (points.length === 0) return points
+  return points.map((point) => ({
+    ...point,
+    value: kind === 'pressure'
+      ? (convertPressureValue(point.value, unit) ?? point.value)
+      : (convertFlowValue(point.value, unit) ?? point.value),
+  }))
 }
 
 function formatCount(value: number | null) {
@@ -1050,6 +1079,10 @@ function App() {
   })
 
   const [stationCount, setStationCount] = useState(readInitialStationCount)
+  const [pressureUnit, setPressureUnit] = useState<string>(DEFAULT_PRESSURE_UNIT)
+  const [flowUnit, setFlowUnit] = useState<string>(DEFAULT_FLOW_UNIT)
+  const [systemSettingsLoaded, setSystemSettingsLoaded] = useState(false)
+  const saveSystemSettingsTimerRef = useRef<number | null>(null)
   const dashboardFaceplateIndexes = useMemo(() => createStationIndexes(stationCount), [stationCount])
 
   const [writeDrafts, setWriteDrafts] = useState<Record<string, string>>({})
@@ -1123,6 +1156,20 @@ function App() {
 
     setStatusMessage(message)
   }
+
+  const loadSystemConfig = useCallback(async () => {
+    try {
+      const settings = await getSystemSettings()
+      setStationCount(normalizeStationCount(settings.stationCount))
+      setPressureUnit(PRESSURE_UNIT_OPTIONS.includes(settings.pressureUnit as typeof PRESSURE_UNIT_OPTIONS[number]) ? settings.pressureUnit : DEFAULT_PRESSURE_UNIT)
+      setFlowUnit(FLOW_UNIT_OPTIONS.includes(settings.flowUnit as typeof FLOW_UNIT_OPTIONS[number]) ? settings.flowUnit : DEFAULT_FLOW_UNIT)
+      setSystemSettingsLoaded(true)
+    } catch (error) {
+      console.error('加载系统配置失败:', error)
+      setSystemSettingsLoaded(true)
+      setStatusMessage(error instanceof Error ? error.message : '系统配置加载失败')
+    }
+  }, [])
 
   const resetDeviceDraft = useCallback(() => {
     setDeviceDraft(EMPTY_DEVICE_FORM)
@@ -1529,6 +1576,11 @@ function App() {
     { key: 'reworkConfig' as const, title: '返修组态', subtitle: '返修服务页面入口', actualUrl: '-', visible: reportVisibility.reworkConfig },
     { key: 'reworkRecords' as const, title: '返修记录', subtitle: '返修服务页面入口', actualUrl: '-', visible: reportVisibility.reworkRecords },
   ]
+  const systemSettings = useMemo<SystemSettings>(() => ({
+    stationCount,
+    pressureUnit,
+    flowUnit,
+  }), [flowUnit, pressureUnit, stationCount])
   const groups = useMemo(() => {
     const values = runtime.tags.map((tag) => getResolvedGroup(runtimeNameById[tag.deviceId] ?? '', tag))
     return sortGroupOptions(values)
@@ -1660,13 +1712,25 @@ function App() {
     const deviceStatus = tag ? runtimeDeviceStatusById[tag.deviceId] : undefined
     const healthy = tag ? isHealthySnapshot(tag, snapshot, deviceStatus) : false
     const numeric = healthy ? toNumericValue(snapshot?.value ?? null) : null
-    const emptyText = formatNumberWithUnit(null, inferUnit(name), digitsMap[key])
+    const displayUnit =
+      key === 'pressure'
+        ? pressureUnit
+        : key === 'flow'
+          ? flowUnit
+          : inferUnit(name)
+    const convertedNumeric =
+      key === 'pressure'
+        ? convertPressureValue(numeric, pressureUnit)
+        : key === 'flow'
+          ? convertFlowValue(numeric, flowUnit)
+          : numeric
+    const emptyText = formatNumberWithUnit(null, displayUnit, digitsMap[key])
     return {
       tag,
       snapshot,
       healthy,
-      numeric,
-      text: healthy ? formatNumberWithUnit(numeric, inferUnit(name), digitsMap[key]) : emptyText,
+      numeric: convertedNumeric,
+      text: healthy ? formatNumberWithUnit(convertedNumeric, displayUnit, digitsMap[key]) : emptyText,
       emptyText,
     }
   }
@@ -1696,12 +1760,12 @@ function App() {
     const now = Date.now()
     const faceplateTrend = dashboardTrendByFaceplate[faceplateIndex] ?? { pressure: [], flow: [] }
     const pressureSeries = faceplateTrend.pressure.length > 0
-      ? faceplateTrend.pressure
+      ? convertSeries(faceplateTrend.pressure, 'pressure', pressureUnit)
       : pressure.numeric !== null
         ? [{ ts: now, value: pressure.numeric }]
         : []
     const flowSeries = faceplateTrend.flow.length > 0
-      ? faceplateTrend.flow
+      ? convertSeries(faceplateTrend.flow, 'flow', flowUnit)
       : flow.numeric !== null
         ? [{ ts: now, value: flow.numeric }]
         : []
@@ -2138,7 +2202,22 @@ function App() {
     const connection = new HubConnectionBuilder().withUrl('/hubs/realtime').withAutomaticReconnect().configureLogging(LogLevel.Information).build()
 
     connection.on('tagSnapshotUpdated', (snapshot: TagSnapshot) => {
-      setRuntime((current) => ({ ...current, snapshots: [...current.snapshots.filter((item) => item.tagId !== snapshot.tagId), snapshot] }))
+      setRuntime((current) => {
+        const existing = current.snapshots.find((item) => item.tagId === snapshot.tagId)
+        const mergedSnapshot = existing
+          ? {
+              ...existing,
+              ...snapshot,
+              sourceTimestamp: snapshot.sourceTimestamp ?? existing.sourceTimestamp,
+              serverTimestamp: snapshot.serverTimestamp ?? existing.serverTimestamp,
+            }
+          : snapshot
+
+        return {
+          ...current,
+          snapshots: [...current.snapshots.filter((item) => item.tagId !== snapshot.tagId), mergedSnapshot],
+        }
+      })
     })
     connection.on('deviceStatusChanged', (event: { deviceId: string; status: string; message: string }) => {
       setRuntime((current) => ({ ...current, devices: current.devices.map((device) => (device.deviceId === event.deviceId ? { ...device, status: event.status } : device)) }))
@@ -2149,6 +2228,9 @@ function App() {
   }, [])
 
   useEffect(() => { if (!selectedDeviceId && activeDeviceId) setSelectedDeviceId(activeDeviceId) }, [activeDeviceId, selectedDeviceId])
+  useEffect(() => {
+    void loadSystemConfig()
+  }, [loadSystemConfig])
   useEffect(() => {
     if (!isAuthenticated && view === 'reportConfig') {
       setView('login')
@@ -2185,6 +2267,31 @@ function App() {
     }
   }, [stationCount])
   useEffect(() => {
+    if (!systemSettingsLoaded) return
+    if (saveSystemSettingsTimerRef.current !== null) {
+      window.clearTimeout(saveSystemSettingsTimerRef.current)
+    }
+    saveSystemSettingsTimerRef.current = window.setTimeout(() => {
+      void updateSystemSettings(systemSettings)
+        .then((settings) => {
+          setStationCount(normalizeStationCount(settings.stationCount))
+          setPressureUnit(settings.pressureUnit)
+          setFlowUnit(settings.flowUnit)
+        })
+        .catch((error) => {
+          console.error('保存系统配置失败:', error)
+          setStatusMessage(error instanceof Error ? error.message : '系统配置保存失败')
+        })
+    }, 180)
+
+    return () => {
+      if (saveSystemSettingsTimerRef.current !== null) {
+        window.clearTimeout(saveSystemSettingsTimerRef.current)
+        saveSystemSettingsTimerRef.current = null
+      }
+    }
+  }, [flowUnit, pressureUnit, stationCount, systemSettings, systemSettingsLoaded])
+  useEffect(() => {
     const currentReportKey = view as ReportKey
     if (!MENU_VISIBILITY_KEYS.includes(currentReportKey as MenuVisibilityKey)) return
     if (reportVisibility[currentReportKey] !== false) return
@@ -2201,7 +2308,7 @@ function App() {
   }, [activeDeviceId, isSiemensDevice])
 
   useEffect(() => {
-    const needsRecipeLease = view === 'recipeDj' || view === 'recipeQyj' || view === 'tags'
+    const needsRecipeLease = view === 'recipeDj' || view === 'recipeQyj' || view === 'tags' || view === 'runtime'
     if (!needsRecipeLease) return
 
     const touchLease = () => void touchRecipeSubscriptionLease(`view:${view}`, RECIPE_SUBSCRIPTION_LEASE_SECONDS).catch(() => {})
@@ -2731,32 +2838,53 @@ function App() {
                     </thead>
                     <tbody>
                       {devices.map((device) => (
-                        <tr key={device.id} className="list-row">
-                          <td>
-                            <strong>{device.name}</strong>
-                            <div className="node-meta">{device.endpointUrl}</div>
-                          </td>
-                          <td>{DRIVER_LABELS[device.driverKind] ?? device.driverKind}</td>
-                          <td>
-                            <span className={`status-pill ${(deviceStatusCards.find((item) => item.id === device.id)?.statusClassName) ?? 'fault'}`}>
-                              {deviceStatusCards.find((item) => item.id === device.id)?.statusLabel ?? device.status}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="row-actions">
-                              <button
-                                type="button"
-                                className="mini-button"
-                                onClick={() => {
-                                  setSelectedDeviceId(device.id)
-                                  loadDeviceIntoDraft(device)
-                                }}
-                              >
-                                编辑
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
+                        (() => {
+                          const deviceCard = deviceStatusCards.find((item) => item.id === device.id)
+                          const statusLabel = (deviceCard?.statusLabel ?? device.status).trim()
+                          const isNgStatus = statusLabel.toUpperCase() === 'NG'
+                          const isConnectedStatus = statusLabel.toUpperCase() === 'CONNECTED'
+                          const statusClassName =
+                            isNgStatus
+                              ? 'fault'
+                              : isConnectedStatus
+                                ? 'normal'
+                                : ((deviceCard?.statusClassName ?? 'fault') as 'normal' | 'warn' | 'fault')
+                          const statusStyle = isNgStatus
+                            ? { color: '#ca3333' }
+                            : isConnectedStatus
+                              ? { color: '#15964d' }
+                              : undefined
+
+                          return (
+                            <tr key={device.id} className="list-row">
+                              <td>
+                                <strong>{device.name}</strong>
+                                <div className="node-meta">{device.endpointUrl}</div>
+                              </td>
+                              <td>{DRIVER_LABELS[device.driverKind] ?? device.driverKind}</td>
+                              <td>
+                                <span className={`status-pill ${statusClassName}`} style={statusStyle}>
+                                  <span className="dot" />
+                                  {statusLabel}
+                                </span>
+                              </td>
+                              <td>
+                                <div className="row-actions">
+                                  <button
+                                    type="button"
+                                    className="mini-button"
+                                    onClick={() => {
+                                      setSelectedDeviceId(device.id)
+                                      loadDeviceIntoDraft(device)
+                                    }}
+                                  >
+                                    编辑
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })()
                       ))}
                     </tbody>
                   </table>
@@ -2773,7 +2901,7 @@ function App() {
             </div>
             <div className="runtime-toolbar-meta">
               <span>{runtimeRows.length} 条变量</span>
-              <span>{loading ? '刷新中' : statusMessage}</span>
+              <span>{loading ? '刷新中' : '按当前订阅状态显示'}</span>
             </div>
           </div>
           <div className="runtime-table-shell">
@@ -3424,12 +3552,11 @@ function App() {
         <article className="tags-hero-card report-hero-card">
           <div className="runtime-title-wrap">
             <div className="runtime-title-copy">
-              <span className="runtime-title-kicker">REPORT CONFIG</span>
-              <h1>报表配置</h1>
+              <span className="runtime-title-kicker">SYSTEM CONFIG</span>
+              <h1>系统配置</h1>
             </div>
           </div>
         </article>
-
         <article className="report-config-station-card">
           <div className="panel-head">
             <div>
@@ -3446,6 +3573,42 @@ function App() {
                 value={stationCount}
                 onChange={(event) => setStationCount(normalizeStationCount(Number(event.target.value)))}
               />
+            </label>
+          </div>
+        </article>
+
+        <article className="report-config-station-card report-config-unit-card">
+          <div className="panel-head">
+            <div>
+              <div className="panel-title">压力单位</div>
+            </div>
+          </div>
+          <div className="report-config-form">
+            <label className="report-unit-row report-unit-row-single">
+              <span>压力单位</span>
+              <select value={pressureUnit} onChange={(event) => setPressureUnit(event.target.value)}>
+                {PRESSURE_UNIT_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </article>
+
+        <article className="report-config-station-card report-config-unit-card">
+          <div className="panel-head">
+            <div>
+              <div className="panel-title">流量单位</div>
+            </div>
+          </div>
+          <div className="report-config-form">
+            <label className="report-unit-row report-unit-row-single">
+              <span>流量单位</span>
+              <select value={flowUnit} onChange={(event) => setFlowUnit(event.target.value)}>
+                {FLOW_UNIT_OPTIONS.map((option) => (
+                  <option key={option} value={option}>{option}</option>
+                ))}
+              </select>
             </label>
           </div>
         </article>

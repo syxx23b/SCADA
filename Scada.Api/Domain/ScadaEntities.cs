@@ -126,6 +126,15 @@ public sealed class EfficiencyTimelineSegmentEntity
     public bool IsDemo { get; set; }
 }
 
+public sealed class SystemSettingEntity
+{
+    public string Key { get; set; } = string.Empty;
+
+    public string Value { get; set; } = string.Empty;
+
+    public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+}
+
 public sealed record RecipeDefinition(Guid Id, string Name, string Description);
 
 public sealed record RecipeItem(Guid TagId, string NodeId, string DataType, string GroupKey);

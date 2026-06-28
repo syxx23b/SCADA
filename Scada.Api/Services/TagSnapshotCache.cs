@@ -19,7 +19,14 @@ public sealed class TagSnapshotCache
 
     public void Upsert(TagSnapshotDto snapshot)
     {
-        _snapshots[snapshot.TagId] = snapshot;
+        _snapshots.AddOrUpdate(
+            snapshot.TagId,
+            snapshot,
+            (_, existing) => snapshot with
+            {
+                SourceTimestamp = snapshot.SourceTimestamp ?? existing.SourceTimestamp,
+                ServerTimestamp = snapshot.ServerTimestamp ?? existing.ServerTimestamp,
+            });
     }
 
     public void Remove(Guid tagId)

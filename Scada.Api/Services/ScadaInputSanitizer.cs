@@ -59,7 +59,7 @@ public static class ScadaInputSanitizer
             authMode,
             username,
             password,
-            request.AutoConnect);
+            true);
     }
 
     public static SanitizedTagPayload NormalizeTag(UpsertTagRequest request)

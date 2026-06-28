@@ -186,7 +186,7 @@ public sealed class DevicesController : ControllerBase
             SecurityMode = "None",
             SecurityPolicy = "None",
             AuthMode = "Anonymous",
-            AutoConnect = false,
+            AutoConnect = true,
             Status = DeviceConnectionStatus.Disconnected
         };
 

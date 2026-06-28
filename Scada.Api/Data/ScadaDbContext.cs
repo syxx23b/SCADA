@@ -18,6 +18,8 @@ public sealed class ScadaDbContext : DbContext
 
     public DbSet<EfficiencyTimelineSegmentEntity> EfficiencyTimelineSegments => Set<EfficiencyTimelineSegmentEntity>();
 
+    public DbSet<SystemSettingEntity> SystemSettings => Set<SystemSettingEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DeviceConnectionEntity>(entity =>
@@ -68,6 +70,14 @@ public sealed class ScadaDbContext : DbContext
             entity.Property(item => item.State).HasConversion<string>().HasMaxLength(24).IsRequired();
             entity.HasIndex(item => new { item.FaceplateIndex, item.StartedAt });
             entity.HasIndex(item => new { item.FaceplateIndex, item.EndedAt });
+        });
+
+        modelBuilder.Entity<SystemSettingEntity>(entity =>
+        {
+            entity.ToTable("SystemSettings", "Process");
+            entity.HasKey(item => item.Key);
+            entity.Property(item => item.Key).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.Value).HasMaxLength(128).IsRequired();
         });
     }
 }

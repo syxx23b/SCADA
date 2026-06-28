@@ -325,6 +325,14 @@ END
 """;
     dbContext.Database.ExecuteSqlRaw(migrateWriteAuditsSchemaSql);
 
+    const string migrateSystemSettingsSchemaSql = """
+IF OBJECT_ID(N'[Process].[SystemSettings]', N'U') IS NULL AND OBJECT_ID(N'[dbo].[SystemSettings]', N'U') IS NOT NULL
+BEGIN
+    EXEC(N'ALTER SCHEMA [Process] TRANSFER [dbo].[SystemSettings]');
+END
+""";
+    dbContext.Database.ExecuteSqlRaw(migrateSystemSettingsSchemaSql);
+
     const string migrateEfficiencySchemaSql = """
 IF OBJECT_ID(N'[OEE].[EfficiencyTimelineSegments]', N'U') IS NULL AND OBJECT_ID(N'[dbo].[EfficiencyTimelineSegments]', N'U') IS NOT NULL
 BEGIN
@@ -400,6 +408,28 @@ END
 """;
     dbContext.Database.ExecuteSqlRaw(ensureWriteAuditsSql);
 
+    const string ensureSystemSettingsSql = """
+IF OBJECT_ID(N'[Process].[SystemSettings]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [Process].[SystemSettings](
+        [Key] nvarchar(64) NOT NULL CONSTRAINT [PK_SystemSettings] PRIMARY KEY,
+        [Value] nvarchar(128) NOT NULL,
+        [UpdatedAt] datetimeoffset(7) NOT NULL
+    );
+END
+
+MERGE [Process].[SystemSettings] AS target
+USING (VALUES
+    (N'StationCount', N'4'),
+    (N'PressureUnit', N'MPa'),
+    (N'FlowUnit', N'L/M')
+) AS source([Key], [Value])
+ON target.[Key] = source.[Key]
+WHEN NOT MATCHED THEN
+    INSERT ([Key], [Value], [UpdatedAt]) VALUES (source.[Key], source.[Value], SYSUTCDATETIME());
+""";
+    dbContext.Database.ExecuteSqlRaw(ensureSystemSettingsSql);
+
     const string ensureEfficiencySql = """
 IF OBJECT_ID(N'[OEE].[EfficiencyTimelineSegments]', N'U') IS NULL
 BEGIN
@@ -439,6 +469,18 @@ END
 
 static void EnsureLocalDeviceAndTags(ScadaDbContext dbContext)
 {
+    var nonAutoConnectDevices = dbContext.Devices.Where(item => !item.AutoConnect).ToList();
+    if (nonAutoConnectDevices.Count > 0)
+    {
+        foreach (var device in nonAutoConnectDevices)
+        {
+            device.AutoConnect = true;
+            device.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+
+        dbContext.SaveChanges();
+    }
+
     var localDevice = dbContext.Devices.FirstOrDefault(item => item.Name == "Local");
     if (localDevice is null)
     {
@@ -450,7 +492,7 @@ static void EnsureLocalDeviceAndTags(ScadaDbContext dbContext)
             SecurityMode = "None",
             SecurityPolicy = "None",
             AuthMode = "Anonymous",
-            AutoConnect = false,
+            AutoConnect = true,
             Status = Scada.Api.Domain.DeviceConnectionStatus.Disconnected
         };
 
