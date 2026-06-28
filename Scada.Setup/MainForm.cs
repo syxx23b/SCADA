@@ -2,25 +2,50 @@ namespace Scada.Setup;
 
 internal sealed class MainForm : Form
 {
-    private const string WindowTitle = "SCADA \u5B89\u88C5\u7A0B\u5E8F";
-    private const string HeaderEyebrow = "Windows \u670D\u52A1\u90E8\u7F72";
-    private const string HeaderTitle = "SCADA \u670D\u52A1\u5B89\u88C5\u7A0B\u5E8F";
-    private const string HeaderSubtitle = "\u7528\u4E8E\u5B89\u88C5\u3001\u8986\u76D6\u6216\u5378\u8F7D\u672C\u673A SCADA \u670D\u52A1\u7A0B\u5E8F\u5305\u3002\u5B89\u88C5\u5668\u4F1A\u4F7F\u7528\u5185\u7F6E\u90E8\u7F72\u914D\u7F6E\uFF0C\u5E76\u81EA\u52A8\u521B\u5EFA Windows \u670D\u52A1\u548C\u684C\u9762\u5FEB\u6377\u65B9\u5F0F\u3002";
-    private const string HeaderMeta = "\u4F5C\u8005  ZhangXC      \u4EA7\u54C1  smScada      \u56FA\u5B9A\u90E8\u7F72\u914D\u7F6E";
-    private const string ProfileTitle = "\u90E8\u7F72\u914D\u7F6E";
-    private const string ProfileSubtitle = "\u8BE5\u5B89\u88C5\u5305\u4E2D\u7684\u5B89\u88C5\u76EE\u5F55\u3001\u670D\u52A1\u6807\u8BC6\u548C\u7AEF\u53E3\u4E3A\u56FA\u5B9A\u914D\u7F6E\uFF0C\u4E0D\u53EF\u4FEE\u6539\u3002";
-    private const string ProfileSummary = "\u5B89\u88C5\u76EE\u5F55: C:\\smScada\r\n\u670D\u52A1\u540D\u79F0: 0Scada_ZXC\r\n\u7AEF\u53E3: 5000";
-    private const string InstallButtonText = "\u5B89\u88C5\u5E76\u542F\u52A8";
-    private const string UninstallButtonText = "\u5378\u8F7D";
-    private const string ExitButtonText = "\u9000\u51FA";
-    private const string LogTitle = "\u64CD\u4F5C\u65E5\u5FD7";
-    private const string LogSubtitle = "\u5B89\u88C5\u6B65\u9AA4\u3001\u670D\u52A1\u64CD\u4F5C\u548C\u547D\u4EE4\u8F93\u51FA\u4F1A\u663E\u793A\u5728\u8FD9\u91CC\u3002";
-    private const string ReadyLogText = "Ready. Click \"Install and Start\" to deploy.";
-    private const string CompletedMessage = "\u64CD\u4F5C\u5DF2\u5B8C\u6210\u3002";
+    private static readonly Color ShellBackColor = Color.FromArgb(241, 245, 249);
+    private static readonly Color HeaderBackColor = Color.FromArgb(29, 45, 78);
+    private static readonly Color HeaderAccentColor = Color.FromArgb(166, 189, 236);
+    private static readonly Color HeaderMetaColor = Color.FromArgb(180, 198, 231);
+    private static readonly Color CardBorderColor = Color.FromArgb(231, 237, 247);
+    private static readonly Color CardTitleColor = Color.FromArgb(34, 40, 52);
+    private static readonly Color LabelColor = Color.FromArgb(99, 107, 132);
+    private static readonly Color InputBackColor = Color.FromArgb(247, 249, 255);
+    private static readonly Color InputBorderColor = Color.FromArgb(215, 221, 234);
+    private static readonly Color PrimaryBlue = Color.FromArgb(0, 95, 135);
+    private static readonly Color PrimaryBlueHover = Color.FromArgb(0, 82, 117);
+    private static readonly Color PrimaryBluePressed = Color.FromArgb(0, 70, 100);
+    private static readonly Color SecondaryTextColor = Color.FromArgb(37, 52, 77);
 
-    private TextBox _logTextBox;
-    private Button _installButton;
-    private Button _uninstallButton;
+    private const string WindowTitle = "SCADA 安装程序";
+    private const string HeaderEyebrow = "INSTALLER";
+    private const string HeaderTitle = "SCADA 服务安装程序";
+    private const string HeaderSubtitle = "用于安装、覆盖或卸载本机 SCADA 服务程序包，并自动注册服务、端口规则和桌面入口。";
+    private const string HeaderMeta = "作者 ZhangXC    产品 smScada    Windows 服务部署";
+    private const string ProfileEyebrow = "DEPLOYMENT CONFIG";
+    private const string ProfileTitle = "部署配置";
+    private const string ProfileSubtitle = "按照数据看板的结构化样式展示安装参数，支持在安装前调整目录、服务标识和端口。";
+    private const string LogEyebrow = "RUNTIME LOGS";
+    private const string LogTitle = "操作日志";
+    private const string LogSubtitle = "安装步骤、服务操作和命令输出会持续追加在这里。";
+    private const string InstallButtonText = "安装并启动";
+    private const string UninstallButtonText = "卸载";
+    private const string ExitButtonText = "退出";
+    private const string BrowseButtonText = "浏览";
+    private const string ReadyLogText = "Ready. Click \"Install and Start\" to deploy.";
+    private const string CompletedMessage = "操作已完成。";
+    private const string InstallDirectoryLabel = "安装目录";
+    private const string ServiceNameLabel = "服务名称";
+    private const string ServiceDisplayNameLabel = "显示名称";
+    private const string PortLabel = "端口";
+
+    private TextBox _installDirectoryTextBox = null!;
+    private TextBox _serviceNameTextBox = null!;
+    private TextBox _serviceDisplayNameTextBox = null!;
+    private NumericUpDown _portNumeric = null!;
+    private TextBox _logTextBox = null!;
+    private Button _installButton = null!;
+    private Button _uninstallButton = null!;
+    private Button _browseButton = null!;
 
     public MainForm()
     {
@@ -29,9 +54,9 @@ internal sealed class MainForm : Form
         MinimizeBox = false;
         MaximizeBox = false;
         FormBorderStyle = FormBorderStyle.FixedDialog;
-        ClientSize = new Size(980, 780);
-        MinimumSize = new Size(980, 780);
-        BackColor = Color.FromArgb(240, 244, 250);
+        ClientSize = new Size(1024, 820);
+        MinimumSize = new Size(1024, 820);
+        BackColor = ShellBackColor;
         Font = new Font("Microsoft YaHei UI", 9F);
 
         var iconPath = Path.Combine(AppContext.BaseDirectory, "launcher.ico");
@@ -45,14 +70,14 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 3,
-            BackColor = BackColor,
-            Padding = new Padding(0),
+            BackColor = ShellBackColor,
+            Padding = new Padding(24, 24, 24, 24),
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 168));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 220));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 170));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 318));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        Controls.Add(root);
 
+        Controls.Add(root);
         root.Controls.Add(BuildHeader(), 0, 0);
         root.Controls.Add(BuildSettingsCard(), 0, 1);
         root.Controls.Add(BuildLogPanel(), 0, 2);
@@ -60,18 +85,16 @@ internal sealed class MainForm : Form
 
     private Control BuildHeader()
     {
-        var header = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.FromArgb(29, 45, 78),
-            Padding = new Padding(32, 24, 32, 24),
-        };
+        var header = CreateCardPanel();
+        header.BackColor = HeaderBackColor;
+        header.Padding = new Padding(28, 22, 28, 22);
+        header.Margin = new Padding(0, 0, 0, 18);
 
         var eyebrow = new Label
         {
             AutoSize = true,
             Text = HeaderEyebrow,
-            ForeColor = Color.FromArgb(166, 189, 236),
+            ForeColor = HeaderAccentColor,
             Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
             Location = new Point(0, 0),
         };
@@ -81,172 +104,270 @@ internal sealed class MainForm : Form
             AutoSize = true,
             Text = HeaderTitle,
             ForeColor = Color.White,
-            Font = new Font("Microsoft YaHei UI", 20F, FontStyle.Bold),
-            Location = new Point(0, 30),
+            Font = new Font("Microsoft YaHei UI", 21F, FontStyle.Bold),
+            Location = new Point(0, 28),
         };
 
         var subtitle = new Label
         {
             AutoSize = false,
-            Size = new Size(760, 52),
+            Size = new Size(820, 42),
             Text = HeaderSubtitle,
             ForeColor = Color.FromArgb(223, 232, 248),
             Font = new Font("Microsoft YaHei UI", 10F),
-            Location = new Point(0, 76),
+            Location = new Point(0, 72),
         };
 
         var meta = new Label
         {
             AutoSize = true,
             Text = HeaderMeta,
-            ForeColor = Color.FromArgb(180, 198, 231),
+            ForeColor = HeaderMetaColor,
             Font = new Font("Microsoft YaHei UI", 9F),
-            Location = new Point(0, 126),
+            Location = new Point(0, 120),
         };
 
-        header.Controls.Add(meta);
-        header.Controls.Add(subtitle);
-        header.Controls.Add(title);
         header.Controls.Add(eyebrow);
+        header.Controls.Add(title);
+        header.Controls.Add(subtitle);
+        header.Controls.Add(meta);
         return header;
     }
 
     private Control BuildSettingsCard()
     {
-        var host = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = BackColor,
-            Padding = new Padding(24, 20, 24, 12),
-        };
+        var card = CreateCardPanel();
+        card.Padding = new Padding(24, 22, 24, 22);
+        card.Margin = new Padding(0, 0, 0, 18);
 
-        var card = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.White,
-            Padding = new Padding(24, 20, 24, 20),
-        };
-        host.Controls.Add(card);
+        var eyebrow = CreateSectionEyebrow(ProfileEyebrow);
+        eyebrow.Location = new Point(0, 0);
 
-        var title = new Label
-        {
-            AutoSize = true,
-            Text = ProfileTitle,
-            ForeColor = Color.FromArgb(28, 37, 54),
-            Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
-            Location = new Point(0, 0),
-        };
+        var title = CreateSectionTitle(ProfileTitle);
+        title.Location = new Point(0, 20);
 
-        var subtitle = new Label
-        {
-            AutoSize = true,
-            Text = ProfileSubtitle,
-            ForeColor = Color.FromArgb(96, 108, 128),
-            Font = new Font("Microsoft YaHei UI", 9F),
-            Location = new Point(0, 28),
-        };
+        var subtitle = CreateSectionSubtitle(ProfileSubtitle, 920);
+        subtitle.Location = new Point(0, 50);
 
-        var summaryPanel = new Panel
+        var formGrid = new TableLayoutPanel
         {
-            Location = new Point(0, 64),
-            Size = new Size(884, 64),
-            BackColor = Color.White,
+            Location = new Point(0, 92),
+            Size = new Size(928, 128),
+            ColumnCount = 2,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            Margin = new Padding(0),
+            Padding = new Padding(0),
         };
+        formGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        formGrid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        formGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+        formGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
 
-        var summary = new Label
-        {
-            AutoSize = false,
-            Size = new Size(884, 64),
-            Text = ProfileSummary,
-            ForeColor = Color.FromArgb(45, 57, 77),
-            Font = new Font("Segoe UI", 11F),
-            Padding = new Padding(0, 4, 0, 0),
-        };
-        summaryPanel.Controls.Add(summary);
+        _installDirectoryTextBox = CreateInputTextBox(InstallerOptions.Default.InstallDirectory);
+        _serviceNameTextBox = CreateInputTextBox(InstallerOptions.Default.ServiceName);
+        _serviceDisplayNameTextBox = CreateInputTextBox(InstallerOptions.Default.ServiceDisplayName);
+        _portNumeric = CreatePortInput(InstallerOptions.Default.Port);
 
-        var buttonPanel = new FlowLayoutPanel
+        formGrid.Controls.Add(CreateFieldPanel(InstallDirectoryLabel, _installDirectoryTextBox, CreateBrowseButton()), 0, 0);
+        formGrid.Controls.Add(CreateFieldPanel(ServiceNameLabel, _serviceNameTextBox), 1, 0);
+        formGrid.Controls.Add(CreateFieldPanel(ServiceDisplayNameLabel, _serviceDisplayNameTextBox), 0, 1);
+        formGrid.Controls.Add(CreateFieldPanel(PortLabel, _portNumeric), 1, 1);
+
+        var actionStrip = new FlowLayoutPanel
         {
-            AutoSize = true,
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
-            Location = new Point(0, 144),
-            Width = 884,
-            Height = 44,
+            AutoSize = false,
+            Location = new Point(0, 238),
+            Size = new Size(928, 42),
             Margin = new Padding(0),
-            Padding = new Padding(0, 8, 0, 0),
+            Padding = new Padding(0),
+            BackColor = Color.Transparent,
         };
 
-        _installButton = MakePrimaryButton(InstallButtonText, 156);
+        _installButton = MakePrimaryButton(InstallButtonText, 152);
         _installButton.Click += InstallButtonOnClick;
         _uninstallButton = MakeSecondaryButton(UninstallButtonText, 104);
         _uninstallButton.Click += UninstallButtonOnClick;
-        var closeButton = MakeSecondaryButton(ExitButtonText, 84);
+        var closeButton = MakeSecondaryButton(ExitButtonText, 88);
         closeButton.Click += (_, _) => Close();
 
-        buttonPanel.Controls.Add(closeButton);
-        buttonPanel.Controls.Add(_uninstallButton);
-        buttonPanel.Controls.Add(_installButton);
+        actionStrip.Controls.Add(closeButton);
+        actionStrip.Controls.Add(_uninstallButton);
+        actionStrip.Controls.Add(_installButton);
 
-        card.Controls.Add(buttonPanel);
-        card.Controls.Add(summaryPanel);
-        card.Controls.Add(subtitle);
+        card.Controls.Add(eyebrow);
         card.Controls.Add(title);
-        return host;
+        card.Controls.Add(subtitle);
+        card.Controls.Add(formGrid);
+        card.Controls.Add(actionStrip);
+        return card;
     }
 
     private Control BuildLogPanel()
     {
-        var host = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = BackColor,
-            Padding = new Padding(24, 8, 24, 24),
-        };
+        var card = CreateCardPanel();
+        card.Padding = new Padding(24, 22, 24, 22);
 
-        var panel = new Panel
-        {
-            Dock = DockStyle.Fill,
-            BackColor = Color.White,
-            Padding = new Padding(24, 20, 24, 20),
-        };
-        host.Controls.Add(panel);
+        var eyebrow = CreateSectionEyebrow(LogEyebrow);
+        eyebrow.Location = new Point(0, 0);
 
-        var title = new Label
-        {
-            AutoSize = true,
-            Text = LogTitle,
-            ForeColor = Color.FromArgb(28, 37, 54),
-            Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
-            Location = new Point(0, 0),
-        };
+        var title = CreateSectionTitle(LogTitle);
+        title.Location = new Point(0, 20);
 
-        var subtitle = new Label
-        {
-            AutoSize = true,
-            Text = LogSubtitle,
-            ForeColor = Color.FromArgb(96, 108, 128),
-            Font = new Font("Microsoft YaHei UI", 9F),
-            Location = new Point(0, 28),
-        };
+        var subtitle = CreateSectionSubtitle(LogSubtitle, 920);
+        subtitle.Location = new Point(0, 50);
 
         _logTextBox = new TextBox
         {
             Multiline = true,
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
-            Location = new Point(0, 60),
-            Size = new Size(884, 230),
+            Location = new Point(0, 92),
+            Size = new Size(928, 186),
             Font = new Font("Consolas", 10F),
-            BackColor = Color.FromArgb(248, 250, 253),
-            ForeColor = Color.FromArgb(34, 41, 56),
+            BackColor = InputBackColor,
+            ForeColor = CardTitleColor,
             BorderStyle = BorderStyle.FixedSingle,
         };
         _logTextBox.AppendText(ReadyLogText);
 
-        panel.Controls.Add(_logTextBox);
-        panel.Controls.Add(subtitle);
-        panel.Controls.Add(title);
-        return host;
+        card.Controls.Add(eyebrow);
+        card.Controls.Add(title);
+        card.Controls.Add(subtitle);
+        card.Controls.Add(_logTextBox);
+        return card;
+    }
+
+    private static Panel CreateCardPanel()
+    {
+        return new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.White,
+            Margin = new Padding(0),
+            BorderStyle = BorderStyle.FixedSingle,
+        };
+    }
+
+    private static Label CreateSectionEyebrow(string text)
+    {
+        return new Label
+        {
+            AutoSize = true,
+            Text = text,
+            ForeColor = PrimaryBlue,
+            Font = new Font("Microsoft YaHei UI", 8.5F, FontStyle.Bold),
+        };
+    }
+
+    private static Label CreateSectionTitle(string text)
+    {
+        return new Label
+        {
+            AutoSize = true,
+            Text = text,
+            ForeColor = CardTitleColor,
+            Font = new Font("Microsoft YaHei UI", 13F, FontStyle.Bold),
+        };
+    }
+
+    private static Label CreateSectionSubtitle(string text, int width)
+    {
+        return new Label
+        {
+            AutoSize = false,
+            Text = text,
+            Size = new Size(width, 32),
+            ForeColor = LabelColor,
+            Font = new Font("Microsoft YaHei UI", 9F),
+        };
+    }
+
+    private Panel CreateFieldPanel(string labelText, Control inputControl, Control? trailingControl = null)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 18, 14),
+            BackColor = Color.Transparent,
+        };
+
+        var label = new Label
+        {
+            AutoSize = true,
+            Text = labelText,
+            ForeColor = LabelColor,
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+            Location = new Point(0, 0),
+        };
+
+        inputControl.Location = new Point(0, 26);
+        inputControl.Size = trailingControl is null ? new Size(430, 36) : new Size(336, 36);
+
+        panel.Controls.Add(label);
+        panel.Controls.Add(inputControl);
+
+        if (trailingControl is not null)
+        {
+            trailingControl.Location = new Point(348, 26);
+            trailingControl.Size = new Size(82, 36);
+            panel.Controls.Add(trailingControl);
+        }
+
+        return panel;
+    }
+
+    private Button CreateBrowseButton()
+    {
+        _browseButton = MakeSecondaryButton(BrowseButtonText, 82);
+        _browseButton.Margin = new Padding(0);
+        _browseButton.Click += BrowseButtonOnClick;
+        return _browseButton;
+    }
+
+    private void BrowseButtonOnClick(object? sender, EventArgs e)
+    {
+        using var dialog = new FolderBrowserDialog
+        {
+            Description = "选择安装目录",
+            SelectedPath = _installDirectoryTextBox.Text
+        };
+
+        if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
+        {
+            _installDirectoryTextBox.Text = dialog.SelectedPath;
+        }
+    }
+
+    private static TextBox CreateInputTextBox(string value)
+    {
+        return new TextBox
+        {
+            Text = value,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = InputBackColor,
+            ForeColor = SecondaryTextColor,
+            Font = new Font("Microsoft YaHei UI", 9.5F),
+            Margin = new Padding(0),
+        };
+    }
+
+    private static NumericUpDown CreatePortInput(int value)
+    {
+        return new NumericUpDown
+        {
+            Minimum = 1,
+            Maximum = 65535,
+            Value = value,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = InputBackColor,
+            ForeColor = SecondaryTextColor,
+            Font = new Font("Microsoft YaHei UI", 9.5F),
+            Margin = new Padding(0),
+            TextAlign = HorizontalAlignment.Left,
+        };
     }
 
     private static Button MakeSecondaryButton(string text, int width)
@@ -257,11 +378,12 @@ internal sealed class MainForm : Form
             Width = width,
             Height = 36,
             BackColor = Color.White,
-            ForeColor = Color.FromArgb(37, 52, 77),
+            ForeColor = SecondaryTextColor,
             FlatStyle = FlatStyle.Flat,
             Margin = new Padding(8, 0, 0, 0),
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
         };
-        button.FlatAppearance.BorderColor = Color.FromArgb(208, 216, 229);
+        button.FlatAppearance.BorderColor = InputBorderColor;
         button.FlatAppearance.MouseOverBackColor = Color.FromArgb(246, 248, 252);
         button.FlatAppearance.MouseDownBackColor = Color.FromArgb(236, 241, 248);
         return button;
@@ -274,14 +396,15 @@ internal sealed class MainForm : Form
             Text = text,
             Width = width,
             Height = 36,
-            BackColor = Color.FromArgb(49, 103, 214),
+            BackColor = PrimaryBlue,
             ForeColor = Color.White,
             FlatStyle = FlatStyle.Flat,
             Margin = new Padding(8, 0, 0, 0),
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
         };
         button.FlatAppearance.BorderSize = 0;
-        button.FlatAppearance.MouseOverBackColor = Color.FromArgb(40, 91, 197);
-        button.FlatAppearance.MouseDownBackColor = Color.FromArgb(32, 79, 176);
+        button.FlatAppearance.MouseOverBackColor = PrimaryBlueHover;
+        button.FlatAppearance.MouseDownBackColor = PrimaryBluePressed;
         return button;
     }
 
@@ -307,10 +430,10 @@ internal sealed class MainForm : Form
     {
         return new InstallerOptions
         {
-            InstallDirectory = InstallerOptions.Default.InstallDirectory,
-            ServiceName = InstallerOptions.Default.ServiceName,
-            ServiceDisplayName = InstallerOptions.Default.ServiceDisplayName,
-            Port = InstallerOptions.Default.Port,
+            InstallDirectory = _installDirectoryTextBox.Text.Trim(),
+            ServiceName = _serviceNameTextBox.Text.Trim(),
+            ServiceDisplayName = _serviceDisplayNameTextBox.Text.Trim(),
+            Port = decimal.ToInt32(_portNumeric.Value),
         };
     }
 
@@ -339,6 +462,7 @@ internal sealed class MainForm : Form
     {
         _installButton.Enabled = !busy;
         _uninstallButton.Enabled = !busy;
+        _browseButton.Enabled = !busy;
         UseWaitCursor = busy;
     }
 

@@ -55,7 +55,8 @@
 - The installer uses Windows Forms.
 - The window is fixed size and centered on startup.
 - The installer font is `Microsoft YaHei UI`.
-- Installer UI text and runtime logs must use English to avoid garbled text on target machines.
+- Installer UI text must use Chinese for operator-facing controls and labels.
+- Runtime logs, command output, and technical error details must use English to avoid garbled text on target machines.
 - The UI must expose these fields:
   - Install directory
   - Service name
