@@ -112,6 +112,10 @@ table {
 .summary-item em { display: block; margin-top: 4px; font-style: normal; font-size: 0.72rem; color: #9aa2b3; }
 .content-strip { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 0 14px 14px; }
 .dashboard-shell {
+  --dash-blue: rgb(0, 95, 135);
+  --dash-yellow: rgb(236, 184, 35);
+  --dash-red: rgb(202, 51, 51);
+  --dash-green: rgb(46, 170, 74);
   --dash-font-lg: 1rem;
   --dash-font-sm: 0.78rem;
   min-height: 0;
@@ -224,7 +228,7 @@ table {
 .dashboard-board-head.fault { background: rgba(227, 73, 83, 0.14); color: var(--dash-red); }
 .dashboard-board-head.disconnected { background: rgba(218, 220, 224, 0.6); color: #2f3742; }
 .dashboard-board-tag { font-size: var(--dash-font-lg); font-weight: 700; line-height: 1; color: rgb(0, 95, 135); }
-.dashboard-board-subtag { margin-top: 2px; font-size: var(--dash-font-sm); color: inherit; }
+.dashboard-board-subtag { margin-top: 2px; font-size: var(--dash-font-sm); color: rgb(0, 95, 135); }
 .dashboard-grid { display: grid; grid-template-columns: 1fr; gap: 12px; background: #f8fafc; }
 .dashboard-grid > * { position: relative; }
 .dashboard-grid > * + * { border-top: 0; }
@@ -4941,5 +4945,242 @@ body,
   font-size: 0.86rem;
 }
 
+/* Dashboard merged stack cleanup */
+.dashboard-topbar {
+  display: none !important;
+}
+
+.dashboard-template-grid {
+  grid-template-columns: repeat(auto-fill, minmax(404px, 404px)) !important;
+  grid-auto-columns: 404px !important;
+  align-items: start !important;
+}
+
+.dashboard-board {
+  width: 404px !important;
+  min-width: 404px !important;
+  max-width: 404px !important;
+  display: flex;
+  flex-direction: column;
+  gap: 0 !important;
+  padding: 0;
+  overflow: hidden !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: 0 12px 28px rgba(16, 24, 40, 0.08) !important;
+}
+
+.dashboard-board-head {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 0 12px;
+  text-align: center;
+  background: #ffffff;
+  border-bottom: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-grid,
+.dashboard-lower-stack {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0 !important;
+  margin-top: 0;
+  background: transparent;
+}
+
+.dashboard-lower-stack {
+  margin-top: 2px !important;
+}
+
+.dashboard-grid > * + *,
+.dashboard-lower-stack > * + * {
+  border-top: 0;
+}
+
+.dashboard-main-stack {
+  width: 100% !important;
+  gap: 0 !important;
+  background: #ffffff !important;
+  border: 0 !important;
+  margin-top: 0 !important;
+  position: relative;
+  z-index: 2;
+  overflow: visible !important;
+  box-shadow: none !important;
+}
+
+.dashboard-main-stack > * + * {
+  border-top: 1px solid #edf2f7 !important;
+}
+
+.dashboard-barcode-card,
+.dashboard-inlet-card,
+.dashboard-mini-card,
+.dashboard-power-card,
+.dashboard-test-card {
+  background: #ffffff !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.dashboard-barcode-card {
+  min-height: 34px;
+  margin-top: -12px !important;
+  padding: 14px 14px 8px !important;
+  display: flex;
+  align-items: center;
+  border: 0 !important;
+  border-top-left-radius: 18px !important;
+  border-top-right-radius: 18px !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  position: relative;
+  z-index: 3;
+  background: #ffffff !important;
+  box-shadow: 0 10px 18px -16px rgba(16, 24, 40, 0.28) !important;
+}
+
+.dashboard-barcode-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -8px;
+  height: 8px;
+  background: #ffffff;
+  border-top-left-radius: 18px;
+  border-top-right-radius: 18px;
+  pointer-events: none;
+  z-index: -1;
+}
+
+.dashboard-inlet-card,
+.dashboard-power-card {
+  min-height: 80px;
+  padding: 12px 16px;
+  justify-content: flex-start;
+  gap: 10px;
+}
+
+.dashboard-inlet-card {
+  border-radius: 0 !important;
+  position: relative;
+  z-index: 1;
+}
+
+.dashboard-main-stack > .dashboard-barcode-card + .dashboard-inlet-card {
+  margin-top: 0 !important;
+  padding-top: 12px !important;
+  border-top: 0 !important;
+  box-shadow: none !important;
+  z-index: 1;
+}
+
+.dashboard-mini-card,
+.dashboard-power-card,
+.dashboard-test-card {
+  border-radius: 0 !important;
+}
+
+.dashboard-mini-card {
+  min-height: 112px;
+  padding: 14px 16px;
+}
+
+.dashboard-mini-card.pressure-card,
+.dashboard-mini-card.flow-card {
+  min-height: 112px;
+  padding-right: 16px;
+  padding-bottom: 8px;
+  padding-left: 16px;
+}
+
+.dashboard-mini-card.pressure-card .dashboard-mini-head,
+.dashboard-mini-card.flow-card .dashboard-mini-head {
+  padding: 0;
+}
+
+.dashboard-test-card {
+  min-height: 200px;
+  padding: 14px 16px;
+  gap: 8px;
+}
+
+.dashboard-alert {
+  width: 100% !important;
+  min-height: 40px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-radius: 0;
+  background: #2a2d3d;
+  color: #ffffff;
+  font-size: var(--dash-font-lg);
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  border: 0;
+}
+
+.dashboard-alert.normal {
+  background: rgba(46, 170, 74, 0.18);
+  color: var(--dash-blue);
+}
+
+.dashboard-alert.fault {
+  background: rgba(202, 51, 51, 0.14);
+  color: var(--dash-red);
+}
+
+.dashboard-card-value.workflow-pill,
+.dashboard-bar-track,
+.dashboard-bar-fill {
+  border-radius: 0 !important;
+}
+
+.dashboard-shell button,
+.dashboard-shell article,
+.dashboard-shell section,
+.dashboard-shell div,
+.dashboard-shell header {
+  border-radius: 0 !important;
+}
+
+.app-shell,
+.app-shell *,
+.app-shell *::before,
+.app-shell *::after {
+  border-radius: 0 !important;
+}
+
+.dashboard-shell .dashboard-main-stack > .dashboard-barcode-card {
+  border-top-left-radius: 18px !important;
+  border-top-right-radius: 18px !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.dashboard-shell .dashboard-main-stack > .dashboard-barcode-card::before {
+  border-top-left-radius: 18px !important;
+  border-top-right-radius: 18px !important;
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+/* Single exception: sidebar collapse toggle stays circular */
+.sidebar-collapse-btn,
+.sidebar-collapse-btn::before,
+.sidebar-collapse-btn::after {
+  border-radius: 50% !important;
+}
 
 
