@@ -141,7 +141,7 @@ internal sealed class MainForm : Form
         var formGrid = new TableLayoutPanel
         {
             Location = new Point(0, 56),
-            Size = new Size(928, 128),
+            Size = new Size(928, 140),
             ColumnCount = 2,
             RowCount = 2,
             BackColor = Color.Transparent,
@@ -163,7 +163,7 @@ internal sealed class MainForm : Form
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             AutoSize = false,
-            Location = new Point(0, 202),
+            Location = new Point(0, 214),
             Size = new Size(928, 42),
             Margin = new Padding(0),
             Padding = new Padding(0),
@@ -216,7 +216,7 @@ internal sealed class MainForm : Form
             Font = new Font("Consolas", 10F),
             BackColor = InputBackColor,
             ForeColor = CardTitleColor,
-            BorderStyle = BorderStyle.FixedSingle,
+            BorderStyle = BorderStyle.None,
         };
         _logTextBox.AppendText(ReadyLogText);
         logHost.Controls.Add(_logTextBox);
@@ -281,7 +281,7 @@ internal sealed class MainForm : Form
         var valueCard = new Panel
         {
             Location = new Point(0, 26),
-            Size = new Size(430, 40),
+            Size = new Size(430, 46),
             BackColor = Color.White,
             BorderStyle = BorderStyle.None,
             Padding = new Padding(12, 0, 12, 0),
