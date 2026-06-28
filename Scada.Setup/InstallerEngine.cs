@@ -15,6 +15,12 @@ internal static class InstallerEngine
     private const string LauncherName = "\u6E05\u6D17\u673A\u6D4B\u8BD5\u7BA1\u7406\u5E73\u53F0";
     private const string FineReportRoot = @"C:\finereport-win64";
     private const string ReportWebRoot = @"C:\finereport-win64";
+    private static readonly TimeSpan ServiceWaitTimeout = TimeSpan.FromSeconds(8);
+    private const int ServicePollDelayMilliseconds = 250;
+    private const int ProcessExitWaitMilliseconds = 1500;
+    private const int DirectoryDeleteRetryCount = 3;
+    private const int DirectoryDeleteRetryDelayMilliseconds = 400;
+    private static readonly string[] CandidateProcessNames = ["Scada.Api", "Scada.Launcher", "java", "javaw"];
     private static readonly Encoding SystemCommandEncoding = Encoding.GetEncoding((int)GetOEMCP());
 
     public static void Install(InstallerOptions options, Action<string> log)
@@ -105,6 +111,12 @@ internal static class InstallerEngine
 
     private static void StopAndDeleteService(InstallerOptions options, Action<string> log)
     {
+        if (!ServiceExists(options.ServiceName))
+        {
+            log("Service was not installed. Cleanup step skipped.");
+            return;
+        }
+
         RunProcess("sc.exe", $"stop {options.ServiceName}", ignoreErrors: true, log, suppressMissingServiceMessage: true);
         WaitForServiceToStop(options.ServiceName, log);
         RunProcess("sc.exe", $"delete {options.ServiceName}", ignoreErrors: true, log, suppressMissingServiceMessage: true);
@@ -119,7 +131,7 @@ internal static class InstallerEngine
             _ = controller.Status;
 
             log($"Waiting for service to stop: {serviceName}");
-            controller.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(20));
+            controller.WaitForStatus(ServiceControllerStatus.Stopped, ServiceWaitTimeout);
             controller.Refresh();
             log($"Service stopped: {serviceName}");
         }
@@ -133,7 +145,7 @@ internal static class InstallerEngine
     {
         log($"Waiting for service to be removed: {serviceName}");
 
-        var timeoutAt = DateTime.UtcNow.AddSeconds(20);
+        var timeoutAt = DateTime.UtcNow.Add(ServiceWaitTimeout);
         while (DateTime.UtcNow < timeoutAt)
         {
             if (!ServiceExists(serviceName))
@@ -142,7 +154,7 @@ internal static class InstallerEngine
                 return;
             }
 
-            Thread.Sleep(500);
+            Thread.Sleep(ServicePollDelayMilliseconds);
         }
 
         throw new InvalidOperationException($"Timed out while waiting for service deletion: {serviceName}");
@@ -180,8 +192,14 @@ internal static class InstallerEngine
         var reportWebRoot = Path.GetFullPath(ReportWebRoot)
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
             + Path.DirectorySeparatorChar;
+        var candidateProcesses = CandidateProcessNames
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .SelectMany(GetProcessesByNameSafe)
+            .GroupBy(process => process.Id)
+            .Select(group => group.First())
+            .ToArray();
 
-        foreach (var process in Process.GetProcesses())
+        foreach (var process in candidateProcesses)
         {
             string? normalizedPath = null;
 
@@ -202,7 +220,7 @@ internal static class InstallerEngine
 
                 log($"Stopping running process: {normalizedPath} (PID {process.Id})");
                 process.Kill(entireProcessTree: true);
-                process.WaitForExit(5000);
+                process.WaitForExit(ProcessExitWaitMilliseconds);
             }
             catch (Win32Exception)
             {
@@ -227,6 +245,18 @@ internal static class InstallerEngine
             {
                 process.Dispose();
             }
+        }
+    }
+
+    private static IEnumerable<Process> GetProcessesByNameSafe(string processName)
+    {
+        try
+        {
+            return Process.GetProcessesByName(processName);
+        }
+        catch
+        {
+            return [];
         }
     }
 
@@ -408,7 +438,7 @@ internal static class InstallerEngine
             return;
         }
 
-        for (var attempt = 1; attempt <= 5; attempt++)
+        for (var attempt = 1; attempt <= DirectoryDeleteRetryCount; attempt++)
         {
             try
             {
@@ -416,9 +446,9 @@ internal static class InstallerEngine
                 Directory.Delete(directory, recursive: true);
                 return;
             }
-            catch when (attempt < 5)
+            catch when (attempt < DirectoryDeleteRetryCount)
             {
-                Thread.Sleep(1000);
+                Thread.Sleep(DirectoryDeleteRetryDelayMilliseconds);
             }
         }
 
