@@ -3,7 +3,7 @@ namespace Scada.Setup;
 internal sealed class MainForm : Form
 {
     private static readonly string InstallerVersion = typeof(MainForm).Assembly.GetName().Version?.ToString() ?? "2026.6.28.2";
-    private static readonly string BuildDate = File.GetLastWriteTime(typeof(MainForm).Assembly.Location).ToString("yyyy.MM.dd");
+    private static readonly string BuildDate = ResolveBuildDate();
     private static readonly Color ShellBackColor = Color.FromArgb(241, 245, 249);
     private static readonly Color HeaderBackColor = Color.FromArgb(29, 45, 78);
     private static readonly Color HeaderAccentColor = Color.FromArgb(166, 189, 236);
@@ -413,5 +413,22 @@ internal sealed class MainForm : Form
         _logTextBox.AppendText(message);
         _logTextBox.SelectionStart = _logTextBox.TextLength;
         _logTextBox.ScrollToCaret();
+    }
+
+    private static string ResolveBuildDate()
+    {
+        var processPath = Environment.ProcessPath;
+        if (!string.IsNullOrWhiteSpace(processPath) && File.Exists(processPath))
+        {
+            return File.GetLastWriteTime(processPath).ToString("yyyy.MM.dd");
+        }
+
+        var baseDirectory = AppContext.BaseDirectory;
+        if (!string.IsNullOrWhiteSpace(baseDirectory) && Directory.Exists(baseDirectory))
+        {
+            return Directory.GetLastWriteTime(baseDirectory).ToString("yyyy.MM.dd");
+        }
+
+        return DateTime.Now.ToString("yyyy.MM.dd");
     }
 }
