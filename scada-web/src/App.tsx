@@ -51,6 +51,7 @@ const RECIPE_SUBSCRIPTION_LEASE_SECONDS = 20
 type HistoryPoint = { ts: number; value: number }
 type DashboardField = { tag?: TagDefinition; snapshot?: TagSnapshot; healthy: boolean; numeric: number | null; text: string; emptyText: string }
 type FaceplateTrend = { pressure: HistoryPoint[]; flow: HistoryPoint[] }
+type DashboardAlarmNotice = { id: string; faceplateIndex: number; stationLabel: string; message: string; leaving?: boolean }
 type SidebarItem = { key: SidebarKey; label: string; icon: ReactNode }
 type WriteOptions = { refreshRuntime?: boolean; successMessage?: string | null }
 
@@ -1104,7 +1105,10 @@ function App() {
     3: { pressure: [], flow: [] },
     4: { pressure: [], flow: [] },
   })
+  const [dashboardAlarmNotices, setDashboardAlarmNotices] = useState<DashboardAlarmNotice[]>([])
   const dashboardTagMapByFaceplateRef = useRef<Record<number, Map<string, TagDefinition>>>({})
+  const previousDashboardAlarmStateRef = useRef<Record<number, boolean>>({})
+  const dashboardAlarmDismissTimersRef = useRef<Record<number, number>>({})
   const snapshotByTagIdRef = useRef<Map<string, TagSnapshot>>(new Map())
   const runtimeDeviceStatusByIdRef = useRef<Record<string, string>>({})
 
@@ -1858,6 +1862,89 @@ function App() {
     }
   })
   }, [dashboardFaceplateIndexes, dashboardTagsByFaceplate, dashboardTrendByFaceplate, runtimeDeviceStatusById, snapshotByTagId])
+
+  useEffect(() => {
+    const previousAlarmState = previousDashboardAlarmStateRef.current
+    const nextAlarmState: Record<number, boolean> = {}
+    const activeNoticeMap = new Map<number, DashboardAlarmNotice>()
+
+    for (const item of dashboardDataList) {
+      const isFault = item.boardHeadClass === 'fault' && item.statusText !== '-'
+      nextAlarmState[item.faceplateIndex] = isFault
+
+      if (isFault) {
+        activeNoticeMap.set(item.faceplateIndex, {
+          id: `${item.faceplateIndex}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          faceplateIndex: item.faceplateIndex,
+          stationLabel: item.title,
+          message: item.statusText,
+        })
+      }
+    }
+
+    previousDashboardAlarmStateRef.current = nextAlarmState
+    setDashboardAlarmNotices((current) => {
+      const currentByFaceplate = new Map(current.map((item) => [item.faceplateIndex, item]))
+      const next: DashboardAlarmNotice[] = []
+
+      for (const [faceplateIndex, notice] of activeNoticeMap.entries()) {
+        const dismissTimer = dashboardAlarmDismissTimersRef.current[faceplateIndex]
+        if (dismissTimer) {
+          window.clearTimeout(dismissTimer)
+          delete dashboardAlarmDismissTimersRef.current[faceplateIndex]
+        }
+        const existing = currentByFaceplate.get(faceplateIndex)
+        if (existing) {
+          next.push({
+            ...existing,
+            stationLabel: notice.stationLabel,
+            message: notice.message,
+            leaving: false,
+          })
+        } else if (!previousAlarmState[faceplateIndex]) {
+          next.push({
+            ...notice,
+            leaving: false,
+          })
+        } else {
+          next.push({
+            ...notice,
+            id: `alarm-${faceplateIndex}`,
+            leaving: false,
+          })
+        }
+      }
+
+      for (const existing of current) {
+        if (activeNoticeMap.has(existing.faceplateIndex)) continue
+
+        if (!existing.leaving) {
+          const timeoutId = window.setTimeout(() => {
+            setDashboardAlarmNotices((items) => items.filter((item) => item.faceplateIndex !== existing.faceplateIndex))
+            delete dashboardAlarmDismissTimersRef.current[existing.faceplateIndex]
+          }, 460)
+          dashboardAlarmDismissTimersRef.current[existing.faceplateIndex] = timeoutId
+          next.push({
+            ...existing,
+            leaving: true,
+          })
+        } else {
+          next.push(existing)
+        }
+      }
+
+      return next.sort((left, right) => left.faceplateIndex - right.faceplateIndex)
+    })
+  }, [dashboardDataList])
+
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of Object.values(dashboardAlarmDismissTimersRef.current)) {
+        window.clearTimeout(timeoutId)
+      }
+      dashboardAlarmDismissTimersRef.current = {}
+    }
+  }, [])
 
   const liveEfficiencyStateByFaceplate = useMemo(() => {
     return dashboardDataList.reduce<Partial<Record<number, { stateKey: 'disconnected' | 'standby' | 'running' | 'fault'; stateLabel: string; colorHex: string }>>>((acc, item) => {
@@ -2996,6 +3083,18 @@ function App() {
 
   const dashboardPage = (
     <section className="dashboard-shell">
+      {dashboardAlarmNotices.length > 0 ? (
+        <div className="dashboard-alarm-toast-stack" aria-live="polite">
+          {dashboardAlarmNotices.map((notice) => (
+            <article key={notice.id} className={`dashboard-alarm-toast${notice.leaving ? ' leaving' : ''}`}>
+              <div className="dashboard-alarm-toast-copy">
+                <span className="dashboard-alarm-toast-title">{notice.stationLabel} 报警:</span>
+                <span className="dashboard-alarm-toast-body">{notice.message}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      ) : null}
       <section className="dashboard-canvas">
         {dashboardDataList.some((item) => item.available) ? (
           <div className="dashboard-center">
