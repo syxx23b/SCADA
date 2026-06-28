@@ -2,13 +2,29 @@ namespace Scada.Setup;
 
 internal sealed class MainForm : Form
 {
+    private const string WindowTitle = "SCADA \u5B89\u88C5\u7A0B\u5E8F";
+    private const string HeaderEyebrow = "Windows \u670D\u52A1\u90E8\u7F72";
+    private const string HeaderTitle = "SCADA \u670D\u52A1\u5B89\u88C5\u7A0B\u5E8F";
+    private const string HeaderSubtitle = "\u7528\u4E8E\u5B89\u88C5\u3001\u8986\u76D6\u6216\u5378\u8F7D\u672C\u673A SCADA \u670D\u52A1\u7A0B\u5E8F\u5305\u3002\u5B89\u88C5\u5668\u4F1A\u4F7F\u7528\u5185\u7F6E\u90E8\u7F72\u914D\u7F6E\uFF0C\u5E76\u81EA\u52A8\u521B\u5EFA Windows \u670D\u52A1\u548C\u684C\u9762\u5FEB\u6377\u65B9\u5F0F\u3002";
+    private const string HeaderMeta = "\u4F5C\u8005  ZhangXC      \u4EA7\u54C1  smScada      \u56FA\u5B9A\u90E8\u7F72\u914D\u7F6E";
+    private const string ProfileTitle = "\u90E8\u7F72\u914D\u7F6E";
+    private const string ProfileSubtitle = "\u8BE5\u5B89\u88C5\u5305\u4E2D\u7684\u5B89\u88C5\u76EE\u5F55\u3001\u670D\u52A1\u6807\u8BC6\u548C\u7AEF\u53E3\u4E3A\u56FA\u5B9A\u914D\u7F6E\uFF0C\u4E0D\u53EF\u4FEE\u6539\u3002";
+    private const string ProfileSummary = "\u5B89\u88C5\u76EE\u5F55: C:\\smScada\r\n\u670D\u52A1\u540D\u79F0: 0Scada_ZXC\r\n\u7AEF\u53E3: 5000";
+    private const string InstallButtonText = "\u5B89\u88C5\u5E76\u542F\u52A8";
+    private const string UninstallButtonText = "\u5378\u8F7D";
+    private const string ExitButtonText = "\u9000\u51FA";
+    private const string LogTitle = "\u64CD\u4F5C\u65E5\u5FD7";
+    private const string LogSubtitle = "\u5B89\u88C5\u6B65\u9AA4\u3001\u670D\u52A1\u64CD\u4F5C\u548C\u547D\u4EE4\u8F93\u51FA\u4F1A\u663E\u793A\u5728\u8FD9\u91CC\u3002";
+    private const string ReadyLogText = "Ready. Click \"Install and Start\" to deploy.";
+    private const string CompletedMessage = "\u64CD\u4F5C\u5DF2\u5B8C\u6210\u3002";
+
     private TextBox _logTextBox;
     private Button _installButton;
     private Button _uninstallButton;
 
     public MainForm()
     {
-        Text = "SCADA 安装程序";
+        Text = WindowTitle;
         StartPosition = FormStartPosition.CenterScreen;
         MinimizeBox = false;
         MaximizeBox = false;
@@ -54,7 +70,7 @@ internal sealed class MainForm : Form
         var eyebrow = new Label
         {
             AutoSize = true,
-            Text = "Windows 服务部署",
+            Text = HeaderEyebrow,
             ForeColor = Color.FromArgb(166, 189, 236),
             Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
             Location = new Point(0, 0),
@@ -63,7 +79,7 @@ internal sealed class MainForm : Form
         var title = new Label
         {
             AutoSize = true,
-            Text = "SCADA 服务安装程序",
+            Text = HeaderTitle,
             ForeColor = Color.White,
             Font = new Font("Microsoft YaHei UI", 20F, FontStyle.Bold),
             Location = new Point(0, 30),
@@ -73,7 +89,7 @@ internal sealed class MainForm : Form
         {
             AutoSize = false,
             Size = new Size(760, 52),
-            Text = "用于安装、覆盖或卸载本机 SCADA 服务程序包。安装器会使用内置部署配置，并自动创建 Windows 服务和桌面快捷方式。",
+            Text = HeaderSubtitle,
             ForeColor = Color.FromArgb(223, 232, 248),
             Font = new Font("Microsoft YaHei UI", 10F),
             Location = new Point(0, 76),
@@ -82,7 +98,7 @@ internal sealed class MainForm : Form
         var meta = new Label
         {
             AutoSize = true,
-            Text = "作者  ZhangXC      产品  smScada      固定部署配置",
+            Text = HeaderMeta,
             ForeColor = Color.FromArgb(180, 198, 231),
             Font = new Font("Microsoft YaHei UI", 9F),
             Location = new Point(0, 126),
@@ -115,7 +131,7 @@ internal sealed class MainForm : Form
         var title = new Label
         {
             AutoSize = true,
-            Text = "部署配置",
+            Text = ProfileTitle,
             ForeColor = Color.FromArgb(28, 37, 54),
             Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
             Location = new Point(0, 0),
@@ -124,7 +140,7 @@ internal sealed class MainForm : Form
         var subtitle = new Label
         {
             AutoSize = true,
-            Text = "该安装包中的安装目录、服务标识和端口为固定配置，不可修改。",
+            Text = ProfileSubtitle,
             ForeColor = Color.FromArgb(96, 108, 128),
             Font = new Font("Microsoft YaHei UI", 9F),
             Location = new Point(0, 28),
@@ -141,7 +157,7 @@ internal sealed class MainForm : Form
         {
             AutoSize = false,
             Size = new Size(884, 64),
-            Text = "安装目录: C:\\smScada\r\n服务名称: 0Scada_ZXC\r\n端口: 5000",
+            Text = ProfileSummary,
             ForeColor = Color.FromArgb(45, 57, 77),
             Font = new Font("Segoe UI", 11F),
             Padding = new Padding(0, 4, 0, 0),
@@ -160,11 +176,11 @@ internal sealed class MainForm : Form
             Padding = new Padding(0, 8, 0, 0),
         };
 
-        _installButton = MakePrimaryButton("安装并启动", 156);
+        _installButton = MakePrimaryButton(InstallButtonText, 156);
         _installButton.Click += InstallButtonOnClick;
-        _uninstallButton = MakeSecondaryButton("卸载", 104);
+        _uninstallButton = MakeSecondaryButton(UninstallButtonText, 104);
         _uninstallButton.Click += UninstallButtonOnClick;
-        var closeButton = MakeSecondaryButton("退出", 84);
+        var closeButton = MakeSecondaryButton(ExitButtonText, 84);
         closeButton.Click += (_, _) => Close();
 
         buttonPanel.Controls.Add(closeButton);
@@ -198,7 +214,7 @@ internal sealed class MainForm : Form
         var title = new Label
         {
             AutoSize = true,
-            Text = "操作日志",
+            Text = LogTitle,
             ForeColor = Color.FromArgb(28, 37, 54),
             Font = new Font("Microsoft YaHei UI", 12F, FontStyle.Bold),
             Location = new Point(0, 0),
@@ -207,7 +223,7 @@ internal sealed class MainForm : Form
         var subtitle = new Label
         {
             AutoSize = true,
-            Text = "安装步骤、服务操作和命令输出会显示在这里。",
+            Text = LogSubtitle,
             ForeColor = Color.FromArgb(96, 108, 128),
             Font = new Font("Microsoft YaHei UI", 9F),
             Location = new Point(0, 28),
@@ -225,7 +241,7 @@ internal sealed class MainForm : Form
             ForeColor = Color.FromArgb(34, 41, 56),
             BorderStyle = BorderStyle.FixedSingle,
         };
-        _logTextBox.AppendText("准备就绪。点击“安装并启动”开始部署。");
+        _logTextBox.AppendText(ReadyLogText);
 
         panel.Controls.Add(_logTextBox);
         panel.Controls.Add(subtitle);
@@ -306,12 +322,12 @@ internal sealed class MainForm : Form
         {
             InstallerEngine.EnsureReady();
             await Task.Run(action);
-            MessageBox.Show(this, "操作已完成。", "SCADA 安装程序", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, CompletedMessage, WindowTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception exception)
         {
             AppendLog(exception.Message);
-            MessageBox.Show(this, exception.Message, "SCADA 安装程序", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, exception.Message, WindowTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {

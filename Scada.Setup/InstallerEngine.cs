@@ -30,13 +30,13 @@ internal static class InstallerEngine
         DeleteDirectoryWithRetry(installDir, log);
         Directory.CreateDirectory(installDir);
 
-        log($"正在复制文件到: {installDir}");
+        log($"Copying files to: {installDir}");
         CopyDirectory(payloadRoot, installDir);
 
         var serviceExe = Path.Combine(installDir, "Scada.Api.exe");
         var binPath = $"\"{serviceExe}\" --urls http://0.0.0.0:{options.Port}";
 
-        log($"正在注册服务: {options.ServiceName}");
+        log($"Registering service: {options.ServiceName}");
         RunProcess(
             "sc.exe",
             $"create {options.ServiceName} binPath= \"{binPath}\" start= auto DisplayName= \"{options.ServiceDisplayName}\" obj= LocalSystem",
@@ -50,9 +50,9 @@ internal static class InstallerEngine
         RunProcess("sc.exe", $"start {options.ServiceName}", ignoreErrors: false, log);
         CreateDesktopLauncher(options, log);
 
-        log("安装完成。");
-        log($"服务名称: {options.ServiceName}");
-        log($"访问地址: http://127.0.0.1:{options.Port}");
+        log("Installation completed.");
+        log($"Service name: {options.ServiceName}");
+        log($"Access URL: http://127.0.0.1:{options.Port}");
     }
 
     public static void Uninstall(InstallerOptions options, Action<string> log)
@@ -70,7 +70,7 @@ internal static class InstallerEngine
             DeleteDirectoryWithRetry(options.InstallDirectory, log);
         }
 
-        log("卸载完成。");
+        log("Uninstall completed.");
     }
 
     public static void EnsureReady()
@@ -96,10 +96,10 @@ internal static class InstallerEngine
         Directory.CreateDirectory(extractedPayloadRoot);
 
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("payload.zip")
-            ?? throw new DirectoryNotFoundException($"未找到安装包内置 payload: {externalPayloadRoot}");
+            ?? throw new DirectoryNotFoundException($"Installer payload not found: {externalPayloadRoot}");
         ZipFile.ExtractToDirectory(stream, extractedPayloadRoot, overwriteFiles: true);
 
-        log($"已释放安装包内容到: {extractedPayloadRoot}");
+        log($"Extracted installer payload to: {extractedPayloadRoot}");
         return extractedPayloadRoot;
     }
 
@@ -118,34 +118,34 @@ internal static class InstallerEngine
             using var controller = new ServiceController(serviceName);
             _ = controller.Status;
 
-            log($"正在等待服务停止: {serviceName}");
+            log($"Waiting for service to stop: {serviceName}");
             controller.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(20));
             controller.Refresh();
-            log($"服务已停止: {serviceName}");
+            log($"Service stopped: {serviceName}");
         }
         catch (InvalidOperationException)
         {
-            log("服务未安装，已跳过清理步骤。");
+            log("Service was not installed. Cleanup step skipped.");
         }
     }
 
     private static void WaitForServiceToBeDeleted(string serviceName, Action<string> log)
     {
-        log($"正在等待服务删除: {serviceName}");
+        log($"Waiting for service to be removed: {serviceName}");
 
         var timeoutAt = DateTime.UtcNow.AddSeconds(20);
         while (DateTime.UtcNow < timeoutAt)
         {
             if (!ServiceExists(serviceName))
             {
-                log($"服务已删除: {serviceName}");
+                log($"Service removed: {serviceName}");
                 return;
             }
 
             Thread.Sleep(500);
         }
 
-        throw new InvalidOperationException($"等待服务删除超时: {serviceName}");
+        throw new InvalidOperationException($"Timed out while waiting for service deletion: {serviceName}");
     }
 
     private static bool ServiceExists(string serviceName)
@@ -200,7 +200,7 @@ internal static class InstallerEngine
                     continue;
                 }
 
-                log($"正在停止运行中的进程: {normalizedPath} (PID {process.Id})");
+                log($"Stopping running process: {normalizedPath} (PID {process.Id})");
                 process.Kill(entireProcessTree: true);
                 process.WaitForExit(5000);
             }
@@ -220,7 +220,7 @@ internal static class InstallerEngine
                      normalizedPath.StartsWith(fineReportRoot, StringComparison.OrdinalIgnoreCase) ||
                      normalizedPath.StartsWith(reportWebRoot, StringComparison.OrdinalIgnoreCase)))
                 {
-                    log($"清理时跳过了仍在运行的进程: {normalizedPath}");
+                    log($"Skipped a running process while cleaning up: {normalizedPath}");
                 }
             }
             finally
@@ -298,7 +298,7 @@ internal static class InstallerEngine
 
         DeleteLegacyUrlLauncher(desktopDirectory);
         CreateShellLink(launcherPath, iconPath, options.InstallDirectory);
-        log($"已创建桌面快捷方式: {launcherPath}");
+        log($"Created desktop shortcut: {launcherPath}");
     }
 
     private static void CreateShellLink(string launcherPath, string iconPath, string workingDirectory)
@@ -306,11 +306,11 @@ internal static class InstallerEngine
         var launcherExePath = Path.Combine(workingDirectory, "Scada.Launcher.exe");
         if (!File.Exists(launcherExePath))
         {
-            throw new FileNotFoundException("未找到桌面启动器文件 Scada.Launcher.exe。", launcherExePath);
+            throw new FileNotFoundException("Desktop launcher file Scada.Launcher.exe was not found.", launcherExePath);
         }
 
         var shellType = Type.GetTypeFromProgID("WScript.Shell", throwOnError: true)
-            ?? throw new InvalidOperationException("由于系统不可用 WScript.Shell，无法创建桌面快捷方式。");
+            ?? throw new InvalidOperationException("Unable to create desktop shortcut because WScript.Shell is unavailable.");
         dynamic? shell = null;
         dynamic? shortcut = null;
 
@@ -372,7 +372,7 @@ internal static class InstallerEngine
         }
 
         File.Delete(launcherPath);
-        log($"已删除桌面快捷方式: {launcherPath}");
+        log($"Deleted desktop shortcut: {launcherPath}");
     }
 
     private static void DeleteLegacyUrlLauncher(string desktopDirectory)
@@ -412,7 +412,7 @@ internal static class InstallerEngine
         {
             try
             {
-                log($"正在删除旧安装目录: {directory}");
+                log($"Removing previous install directory: {directory}");
                 Directory.Delete(directory, recursive: true);
                 return;
             }
@@ -447,7 +447,7 @@ internal static class InstallerEngine
         {
             if (ignoreErrors && suppressMissingServiceMessage && IsMissingServiceMessage(stdout, stderr))
             {
-                log("服务未安装，已跳过清理步骤。");
+                log("Service was not installed. Cleanup step skipped.");
                 return;
             }
 
@@ -461,7 +461,7 @@ internal static class InstallerEngine
                 return;
             }
 
-            throw new InvalidOperationException($"{fileName} 执行失败，退出码 {process.ExitCode}。{Environment.NewLine}{stderr.Trim()}");
+            throw new InvalidOperationException($"{fileName} failed with exit code {process.ExitCode}.{Environment.NewLine}{stderr.Trim()}");
         }
 
         if (!string.IsNullOrWhiteSpace(stdout))
@@ -480,7 +480,7 @@ internal static class InstallerEngine
     {
         if (!OperatingSystem.IsWindows())
         {
-            throw new PlatformNotSupportedException("该安装程序仅支持在 Windows 上运行。");
+            throw new PlatformNotSupportedException("This installer can only run on Windows.");
         }
     }
 
@@ -490,7 +490,7 @@ internal static class InstallerEngine
         var principal = new WindowsPrincipal(identity);
         if (!principal.IsInRole(WindowsBuiltInRole.Administrator))
         {
-            throw new InvalidOperationException("需要管理员权限。请以管理员身份运行安装程序。");
+            throw new InvalidOperationException("Administrator privileges are required. Please run the installer as administrator.");
         }
     }
 
