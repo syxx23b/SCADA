@@ -57,6 +57,8 @@
 - The installer font is `Microsoft YaHei UI`.
 - Installer UI text must use Chinese for operator-facing controls and labels.
 - Runtime logs, command output, and technical error details must use English to avoid garbled text on target machines.
+- The installer UI must display a fixed version identifier and a build date.
+- The version information must be visible on the installer surface, not hidden in an about dialog or file properties only.
 - The UI must expose these fields:
   - Install directory
   - Service name

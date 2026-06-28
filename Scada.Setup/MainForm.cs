@@ -2,6 +2,8 @@ namespace Scada.Setup;
 
 internal sealed class MainForm : Form
 {
+    private static readonly string InstallerVersion = typeof(MainForm).Assembly.GetName().Version?.ToString() ?? "2026.6.28.2";
+    private static readonly string BuildDate = File.GetLastWriteTime(typeof(MainForm).Assembly.Location).ToString("yyyy.MM.dd");
     private static readonly Color ShellBackColor = Color.FromArgb(241, 245, 249);
     private static readonly Color HeaderBackColor = Color.FromArgb(29, 45, 78);
     private static readonly Color HeaderAccentColor = Color.FromArgb(166, 189, 236);
@@ -19,14 +21,12 @@ internal sealed class MainForm : Form
     private const string WindowTitle = "SCADA 安装程序";
     private const string HeaderEyebrow = "INSTALLER";
     private const string HeaderTitle = "SCADA 服务安装程序";
-    private const string HeaderSubtitle = "用于安装、覆盖或卸载本机 SCADA 服务程序包，并自动注册服务、端口规则和桌面入口。";
     private const string HeaderMeta = "作者 ZhangXC    产品 smScada    Windows 服务部署";
+    private const string HeaderVersionPrefix = "版本";
     private const string ProfileEyebrow = "DEPLOYMENT CONFIG";
     private const string ProfileTitle = "部署配置";
-    private const string ProfileSubtitle = "按照数据看板的结构化样式展示安装参数，支持在安装前调整目录、服务标识和端口。";
     private const string LogEyebrow = "RUNTIME LOGS";
     private const string LogTitle = "操作日志";
-    private const string LogSubtitle = "安装步骤、服务操作和命令输出会持续追加在这里。";
     private const string InstallButtonText = "安装并启动";
     private const string UninstallButtonText = "卸载";
     private const string ExitButtonText = "退出";
@@ -38,14 +38,9 @@ internal sealed class MainForm : Form
     private const string ServiceDisplayNameLabel = "显示名称";
     private const string PortLabel = "端口";
 
-    private TextBox _installDirectoryTextBox = null!;
-    private TextBox _serviceNameTextBox = null!;
-    private TextBox _serviceDisplayNameTextBox = null!;
-    private NumericUpDown _portNumeric = null!;
     private TextBox _logTextBox = null!;
     private Button _installButton = null!;
     private Button _uninstallButton = null!;
-    private Button _browseButton = null!;
 
     public MainForm()
     {
@@ -73,8 +68,8 @@ internal sealed class MainForm : Form
             BackColor = ShellBackColor,
             Padding = new Padding(24, 24, 24, 24),
         };
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 170));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 318));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 146));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 284));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         Controls.Add(root);
@@ -87,7 +82,7 @@ internal sealed class MainForm : Form
     {
         var header = CreateCardPanel();
         header.BackColor = HeaderBackColor;
-        header.Padding = new Padding(28, 22, 28, 22);
+        header.Padding = new Padding(28, 20, 28, 20);
         header.Margin = new Padding(0, 0, 0, 18);
 
         var eyebrow = new Label
@@ -108,29 +103,28 @@ internal sealed class MainForm : Form
             Location = new Point(0, 28),
         };
 
-        var subtitle = new Label
-        {
-            AutoSize = false,
-            Size = new Size(820, 42),
-            Text = HeaderSubtitle,
-            ForeColor = Color.FromArgb(223, 232, 248),
-            Font = new Font("Microsoft YaHei UI", 10F),
-            Location = new Point(0, 72),
-        };
-
         var meta = new Label
         {
             AutoSize = true,
             Text = HeaderMeta,
             ForeColor = HeaderMetaColor,
             Font = new Font("Microsoft YaHei UI", 9F),
-            Location = new Point(0, 120),
+            Location = new Point(0, 78),
+        };
+
+        var version = new Label
+        {
+            AutoSize = true,
+            Text = $"{HeaderVersionPrefix} {InstallerVersion}    日期 {BuildDate}",
+            ForeColor = HeaderMetaColor,
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
+            Location = new Point(0, 102),
         };
 
         header.Controls.Add(eyebrow);
         header.Controls.Add(title);
-        header.Controls.Add(subtitle);
         header.Controls.Add(meta);
+        header.Controls.Add(version);
         return header;
     }
 
@@ -146,12 +140,9 @@ internal sealed class MainForm : Form
         var title = CreateSectionTitle(ProfileTitle);
         title.Location = new Point(0, 20);
 
-        var subtitle = CreateSectionSubtitle(ProfileSubtitle, 920);
-        subtitle.Location = new Point(0, 50);
-
         var formGrid = new TableLayoutPanel
         {
-            Location = new Point(0, 92),
+            Location = new Point(0, 56),
             Size = new Size(928, 128),
             ColumnCount = 2,
             RowCount = 2,
@@ -164,22 +155,17 @@ internal sealed class MainForm : Form
         formGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
         formGrid.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
 
-        _installDirectoryTextBox = CreateInputTextBox(InstallerOptions.Default.InstallDirectory);
-        _serviceNameTextBox = CreateInputTextBox(InstallerOptions.Default.ServiceName);
-        _serviceDisplayNameTextBox = CreateInputTextBox(InstallerOptions.Default.ServiceDisplayName);
-        _portNumeric = CreatePortInput(InstallerOptions.Default.Port);
-
-        formGrid.Controls.Add(CreateFieldPanel(InstallDirectoryLabel, _installDirectoryTextBox, CreateBrowseButton()), 0, 0);
-        formGrid.Controls.Add(CreateFieldPanel(ServiceNameLabel, _serviceNameTextBox), 1, 0);
-        formGrid.Controls.Add(CreateFieldPanel(ServiceDisplayNameLabel, _serviceDisplayNameTextBox), 0, 1);
-        formGrid.Controls.Add(CreateFieldPanel(PortLabel, _portNumeric), 1, 1);
+        formGrid.Controls.Add(CreateStaticFieldPanel(InstallDirectoryLabel, InstallerOptions.Default.InstallDirectory), 0, 0);
+        formGrid.Controls.Add(CreateStaticFieldPanel(ServiceNameLabel, InstallerOptions.Default.ServiceName), 1, 0);
+        formGrid.Controls.Add(CreateStaticFieldPanel(ServiceDisplayNameLabel, InstallerOptions.Default.ServiceDisplayName), 0, 1);
+        formGrid.Controls.Add(CreateStaticFieldPanel(PortLabel, InstallerOptions.Default.Port.ToString()), 1, 1);
 
         var actionStrip = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.RightToLeft,
             WrapContents = false,
             AutoSize = false,
-            Location = new Point(0, 238),
+            Location = new Point(0, 202),
             Size = new Size(928, 42),
             Margin = new Padding(0),
             Padding = new Padding(0),
@@ -199,7 +185,6 @@ internal sealed class MainForm : Form
 
         card.Controls.Add(eyebrow);
         card.Controls.Add(title);
-        card.Controls.Add(subtitle);
         card.Controls.Add(formGrid);
         card.Controls.Add(actionStrip);
         return card;
@@ -216,16 +201,13 @@ internal sealed class MainForm : Form
         var title = CreateSectionTitle(LogTitle);
         title.Location = new Point(0, 20);
 
-        var subtitle = CreateSectionSubtitle(LogSubtitle, 920);
-        subtitle.Location = new Point(0, 50);
-
         _logTextBox = new TextBox
         {
             Multiline = true,
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
-            Location = new Point(0, 92),
-            Size = new Size(928, 186),
+            Location = new Point(0, 56),
+            Size = new Size(928, 222),
             Font = new Font("Consolas", 10F),
             BackColor = InputBackColor,
             ForeColor = CardTitleColor,
@@ -235,7 +217,6 @@ internal sealed class MainForm : Form
 
         card.Controls.Add(eyebrow);
         card.Controls.Add(title);
-        card.Controls.Add(subtitle);
         card.Controls.Add(_logTextBox);
         return card;
     }
@@ -273,19 +254,7 @@ internal sealed class MainForm : Form
         };
     }
 
-    private static Label CreateSectionSubtitle(string text, int width)
-    {
-        return new Label
-        {
-            AutoSize = false,
-            Text = text,
-            Size = new Size(width, 32),
-            ForeColor = LabelColor,
-            Font = new Font("Microsoft YaHei UI", 9F),
-        };
-    }
-
-    private Panel CreateFieldPanel(string labelText, Control inputControl, Control? trailingControl = null)
+    private Panel CreateStaticFieldPanel(string labelText, string valueText)
     {
         var panel = new Panel
         {
@@ -303,71 +272,29 @@ internal sealed class MainForm : Form
             Location = new Point(0, 0),
         };
 
-        inputControl.Location = new Point(0, 26);
-        inputControl.Size = trailingControl is null ? new Size(430, 36) : new Size(336, 36);
+        var valueCard = new Panel
+        {
+            Location = new Point(0, 26),
+            Size = new Size(430, 40),
+            BackColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(12, 0, 12, 0),
+        };
+
+        var value = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = valueText,
+            ForeColor = PrimaryBlue,
+            Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft,
+        };
+
+        valueCard.Controls.Add(value);
 
         panel.Controls.Add(label);
-        panel.Controls.Add(inputControl);
-
-        if (trailingControl is not null)
-        {
-            trailingControl.Location = new Point(348, 26);
-            trailingControl.Size = new Size(82, 36);
-            panel.Controls.Add(trailingControl);
-        }
-
+        panel.Controls.Add(valueCard);
         return panel;
-    }
-
-    private Button CreateBrowseButton()
-    {
-        _browseButton = MakeSecondaryButton(BrowseButtonText, 82);
-        _browseButton.Margin = new Padding(0);
-        _browseButton.Click += BrowseButtonOnClick;
-        return _browseButton;
-    }
-
-    private void BrowseButtonOnClick(object? sender, EventArgs e)
-    {
-        using var dialog = new FolderBrowserDialog
-        {
-            Description = "选择安装目录",
-            SelectedPath = _installDirectoryTextBox.Text
-        };
-
-        if (dialog.ShowDialog(this) == DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
-        {
-            _installDirectoryTextBox.Text = dialog.SelectedPath;
-        }
-    }
-
-    private static TextBox CreateInputTextBox(string value)
-    {
-        return new TextBox
-        {
-            Text = value,
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = InputBackColor,
-            ForeColor = SecondaryTextColor,
-            Font = new Font("Microsoft YaHei UI", 9.5F),
-            Margin = new Padding(0),
-        };
-    }
-
-    private static NumericUpDown CreatePortInput(int value)
-    {
-        return new NumericUpDown
-        {
-            Minimum = 1,
-            Maximum = 65535,
-            Value = value,
-            BorderStyle = BorderStyle.FixedSingle,
-            BackColor = InputBackColor,
-            ForeColor = SecondaryTextColor,
-            Font = new Font("Microsoft YaHei UI", 9.5F),
-            Margin = new Padding(0),
-            TextAlign = HorizontalAlignment.Left,
-        };
     }
 
     private static Button MakeSecondaryButton(string text, int width)
@@ -430,10 +357,10 @@ internal sealed class MainForm : Form
     {
         return new InstallerOptions
         {
-            InstallDirectory = _installDirectoryTextBox.Text.Trim(),
-            ServiceName = _serviceNameTextBox.Text.Trim(),
-            ServiceDisplayName = _serviceDisplayNameTextBox.Text.Trim(),
-            Port = decimal.ToInt32(_portNumeric.Value),
+            InstallDirectory = InstallerOptions.Default.InstallDirectory,
+            ServiceName = InstallerOptions.Default.ServiceName,
+            ServiceDisplayName = InstallerOptions.Default.ServiceDisplayName,
+            Port = InstallerOptions.Default.Port,
         };
     }
 
@@ -462,7 +389,6 @@ internal sealed class MainForm : Form
     {
         _installButton.Enabled = !busy;
         _uninstallButton.Enabled = !busy;
-        _browseButton.Enabled = !busy;
         UseWaitCursor = busy;
     }
 

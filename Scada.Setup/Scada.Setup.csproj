@@ -14,6 +14,9 @@
     <Authors>ZhangXC</Authors>
     <Product>smScada</Product>
     <Description>smScada service installer</Description>
+    <Version>2026.6.28.2</Version>
+    <AssemblyVersion>2026.6.28.2</AssemblyVersion>
+    <FileVersion>2026.6.28.2</FileVersion>
   </PropertyGroup>
 
   <PropertyGroup>
