@@ -2,13 +2,11 @@ namespace Scada.Setup;
 
 internal sealed class MainForm : Form
 {
-    private static readonly string InstallerVersion = typeof(MainForm).Assembly.GetName().Version?.ToString() ?? "2026.6.28.2";
     private static readonly string BuildDate = ResolveBuildDate();
     private static readonly Color ShellBackColor = Color.FromArgb(241, 245, 249);
     private static readonly Color HeaderBackColor = Color.FromArgb(29, 45, 78);
     private static readonly Color HeaderAccentColor = Color.FromArgb(166, 189, 236);
     private static readonly Color HeaderMetaColor = Color.FromArgb(180, 198, 231);
-    private static readonly Color CardBorderColor = Color.FromArgb(231, 237, 247);
     private static readonly Color CardTitleColor = Color.FromArgb(34, 40, 52);
     private static readonly Color LabelColor = Color.FromArgb(99, 107, 132);
     private static readonly Color InputBackColor = Color.FromArgb(247, 249, 255);
@@ -22,7 +20,7 @@ internal sealed class MainForm : Form
     private const string HeaderEyebrow = "INSTALLER";
     private const string HeaderTitle = "SCADA 服务安装程序";
     private const string HeaderMeta = "作者 ZhangXC    产品 smScada    Windows 服务部署";
-    private const string HeaderVersionPrefix = "版本";
+    private const string HeaderDatePrefix = "日期";
     private const string ProfileEyebrow = "DEPLOYMENT CONFIG";
     private const string ProfileTitle = "部署配置";
     private const string LogEyebrow = "RUNTIME LOGS";
@@ -115,7 +113,7 @@ internal sealed class MainForm : Form
         var version = new Label
         {
             AutoSize = true,
-            Text = $"{HeaderVersionPrefix} {InstallerVersion}    日期 {BuildDate}",
+            Text = $"{HeaderDatePrefix} {BuildDate}",
             ForeColor = HeaderMetaColor,
             Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
             Location = new Point(0, 102),
@@ -201,23 +199,31 @@ internal sealed class MainForm : Form
         var title = CreateSectionTitle(LogTitle);
         title.Location = new Point(0, 20);
 
+        var logHost = new Panel
+        {
+            Location = new Point(0, 56),
+            Size = new Size(928, 222),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            BackColor = Color.Transparent,
+        };
+
         _logTextBox = new TextBox
         {
             Multiline = true,
             ReadOnly = true,
             ScrollBars = ScrollBars.Vertical,
-            Location = new Point(0, 56),
-            Size = new Size(928, 222),
+            Dock = DockStyle.Fill,
             Font = new Font("Consolas", 10F),
             BackColor = InputBackColor,
             ForeColor = CardTitleColor,
             BorderStyle = BorderStyle.FixedSingle,
         };
         _logTextBox.AppendText(ReadyLogText);
+        logHost.Controls.Add(_logTextBox);
 
         card.Controls.Add(eyebrow);
         card.Controls.Add(title);
-        card.Controls.Add(_logTextBox);
+        card.Controls.Add(logHost);
         return card;
     }
 
@@ -228,7 +234,7 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             BackColor = Color.White,
             Margin = new Padding(0),
-            BorderStyle = BorderStyle.FixedSingle,
+            BorderStyle = BorderStyle.None,
         };
     }
 
@@ -277,7 +283,7 @@ internal sealed class MainForm : Form
             Location = new Point(0, 26),
             Size = new Size(430, 40),
             BackColor = Color.White,
-            BorderStyle = BorderStyle.FixedSingle,
+            BorderStyle = BorderStyle.None,
             Padding = new Padding(12, 0, 12, 0),
         };
 
@@ -286,7 +292,7 @@ internal sealed class MainForm : Form
             Dock = DockStyle.Fill,
             Text = valueText,
             ForeColor = PrimaryBlue,
-            Font = new Font("Microsoft YaHei UI", 10F, FontStyle.Bold),
+            Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Bold),
             TextAlign = ContentAlignment.MiddleLeft,
         };
 
