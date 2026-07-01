@@ -46,7 +46,7 @@
 - The launcher must open the local SCADA application at:
   `http://localhost:5000/`
 - The single source of truth for all product icons is:
-  `C:\Users\syxxz\OneDrive\SCADA\logo.svg`
+  `C:\Users\syxxz\MiDrive\SCADA\logo.svg`
 - All icon assets used by the project must be generated from that file, including frontend brand icons, favicon, desktop shortcut icon, launcher icon, and installer icon.
 - No other standalone svg/png/ico file may be used as an independent icon source.
 
@@ -113,7 +113,7 @@
 - Example:
   `SCADA-Setup-2026.06.04.1530.exe`
 - The final installer output directory is:
-  `C:\Users\syxxz\OneDrive\SCADA`
+  `C:\Users\syxxz\MiDrive\SCADA`
 - Standard packaging entrypoint:
   `Build-Installer.ps1`
 - Future installer builds should use `Build-Installer.ps1` so output naming, output path, and cleanup behavior stay consistent.

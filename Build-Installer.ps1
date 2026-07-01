@@ -2,8 +2,8 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$installerOutputRoot = 'C:\Users\syxxz\OneDrive\SCADA'
-$techStackNodeModules = 'C:\Users\syxxz\OneDrive\SCADA\Tech Stack\Scada_Codex_Siemens\node_modules'
+$installerOutputRoot = 'C:\Users\syxxz\MiDrive\SCADA'
+$techStackNodeModules = 'C:\Users\syxxz\MiDrive\SCADA\Tech Stack\Scada_Codex_Siemens\node_modules'
 $scadaWebDir = Join-Path $repoRoot 'scada-web'
 $workspaceNodeModulesLink = Join-Path $repoRoot 'node_modules'
 $webNodeModulesLink = Join-Path $scadaWebDir 'node_modules'
