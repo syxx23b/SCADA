@@ -4,10 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "set NODE_PATH=C:\\Users\\syxxz\\OneDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules&& set PATH=C:\\Users\\syxxz\\OneDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules\\.bin;%PATH%&& vite --host --port 5173 --strictPort",
-    "build": "set NODE_PATH=C:\\Users\\syxxz\\OneDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules&& set PATH=C:\\Users\\syxxz\\OneDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules\\.bin;%PATH%&& tsc -b && vite build",
-    "lint": "set NODE_PATH=C:\\Users\\syxxz\\OneDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules&& set PATH=C:\\Users\\syxxz\\OneDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules\\.bin;%PATH%&& eslint .",
-    "preview": "set NODE_PATH=C:\\Users\\syxxz\\OneDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules&& set PATH=C:\\Users\\syxxz\\OneDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules\\.bin;%PATH%&& vite preview --port 5000 --host"
+    "dev": "set NODE_PATH=C:\\Users\\syxxz\\MiDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules&& set PATH=C:\\Users\\syxxz\\MiDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules\\.bin;%PATH%&& vite --host --port 5173 --strictPort",
+    "build": "set NODE_PATH=C:\\Users\\syxxz\\MiDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules&& set PATH=C:\\Users\\syxxz\\MiDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules\\.bin;%PATH%&& tsc -b && vite build",
+    "lint": "set NODE_PATH=C:\\Users\\syxxz\\MiDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules&& set PATH=C:\\Users\\syxxz\\MiDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules\\.bin;%PATH%&& eslint .",
+    "preview": "set NODE_PATH=C:\\Users\\syxxz\\MiDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules&& set PATH=C:\\Users\\syxxz\\MiDrive\\SCADA\\Tech Stack\\Scada_Codex_Siemens\\node_modules\\.bin;%PATH%&& vite preview --port 5000 --host"
   },
   "dependencies": {
     "@microsoft/signalr": "^9.0.5",
