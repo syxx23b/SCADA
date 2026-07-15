@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Scada.Setup</RootNamespace>
+    <AssemblyName>Scada.Setup</AssemblyName>
+    <ApplicationIcon>Assets\launcher.ico</ApplicationIcon>
+    <ApplicationManifest>Properties\app.manifest</ApplicationManifest>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Company>smScada</Company>
+    <Authors>ZhangXC</Authors>
+    <Product>smScada</Product>
+    <Description>smScada service installer</Description>
+    <Version>2026.6.28.2</Version>
+    <AssemblyVersion>2026.6.28.2</AssemblyVersion>
+    <FileVersion>2026.6.28.2</FileVersion>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DefaultPayloadSourceDir Condition="'$(DefaultPayloadSourceDir)' == ''">..\Scada.Api\bin\Release\net8.0\win-x64\publish</DefaultPayloadSourceDir>
+    <LauncherPublishDir>$(MSBuildProjectDirectory)\$(IntermediateOutputPath)launcher-publish\</LauncherPublishDir>
+    <ServiceName Condition="'$(ServiceName)' == ''">0Scada_ZXC</ServiceName>
+    <ServiceDisplayName Condition="'$(ServiceDisplayName)' == ''">0Scada_ZXC</ServiceDisplayName>
+    <InstallDirectory Condition="'$(InstallDirectory)' == ''">C:\smScada</InstallDirectory>
+    <ServicePort Condition="'$(ServicePort)' == ''">5000</ServicePort>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="Properties\app.manifest" />
+    <PackageReference Include="System.ServiceProcess.ServiceController" Version="9.0.5" />
+    <Content Include="Assets\launcher.ico" Link="launcher.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+    <EmbeddedResource Include="Assets\launcher.ico" LogicalName="launcher.ico" />
+  </ItemGroup>
+
+  <Target Name="PreparePayload" BeforeTargets="AssignTargetPaths">
+    <RemoveDir Directories="$(IntermediateOutputPath)payload" />
+    <RemoveDir Directories="$(LauncherPublishDir)" />
+    <MakeDir Directories="$(IntermediateOutputPath)payload" />
+    <MakeDir Directories="$(LauncherPublishDir)" />
+
+    <ItemGroup>
+      <_PayloadFiles Include="$(DefaultPayloadSourceDir)\**\*" />
+    </ItemGroup>
+
+    <Copy
+      SourceFiles="@(_PayloadFiles)"
+      DestinationFiles="@(_PayloadFiles->'$(IntermediateOutputPath)payload\%(RecursiveDir)%(Filename)%(Extension)')" />
+
+    <MSBuild
+      Projects="..\Scada.Launcher\Scada.Launcher.csproj"
+      Targets="Restore;Publish"
+      Properties="Configuration=$(Configuration);RuntimeIdentifier=win-x64;SelfContained=true;PublishSingleFile=true;IncludeNativeLibrariesForSelfExtract=true;DebugType=None;DebugSymbols=false;PublishDir=$(LauncherPublishDir)" />
+
+    <ItemGroup>
+      <_LauncherFiles Include="$(LauncherPublishDir)\**\*" />
+    </ItemGroup>
+
+    <Copy
+      SourceFiles="@(_LauncherFiles)"
+      DestinationFiles="@(_LauncherFiles->'$(IntermediateOutputPath)payload\%(RecursiveDir)%(Filename)%(Extension)')" />
+
+    <ZipDirectory
+      SourceDirectory="$(IntermediateOutputPath)payload"
+      DestinationFile="$(IntermediateOutputPath)payload.zip"
+      Overwrite="true" />
+
+    <ItemGroup>
+      <EmbeddedResource Include="$(IntermediateOutputPath)payload.zip" LogicalName="payload.zip" />
+    </ItemGroup>
+  </Target>
+
+</Project>
