@@ -1,0 +1,7 @@
+{
+  "deployTargetPort": 9001,
+  "deployAfterEveryChange": true,
+  "deployHost": "http://localhost:9001",
+  "runtimeProjectRoot": "C:\\Users\\syxxz\\OneDrive\\SCADA\\Scada_Codex",
+  "notes": "Every change must be built from runtimeProjectRoot and deployed to http://localhost:9001."
+}
