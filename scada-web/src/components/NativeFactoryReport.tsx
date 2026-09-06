@@ -2,6 +2,7 @@
 import jsPDF from 'jspdf'
 import { exportEnduranceTestReportExcel, exportFactoryTestReportExcel, exportGasEngineEnduranceTestReportExcel, exportGasEngineFactoryTestReportExcel, getEnduranceTestReport, getFactoryTestReport, getGasEngineEnduranceTestReport, getGasEngineFactoryTestReport, getSystemSettings } from '../api'
 import type { FactoryTestReportColumn, FactoryTestReportResponse } from '../types'
+import { Icon } from './Icon'
 
 type ReportLanguage = 'zh' | 'en'
 type NativeReportVariant = 'factory' | 'endurance' | 'gasFactory' | 'gasEndurance'
@@ -831,19 +832,19 @@ export function NativeFactoryReport({
           <input value={filters.gw} inputMode="numeric" onChange={(event) => setFilters((current) => ({ ...current, gw: event.target.value }))} />
         </label>
         <button type="button" className="primary-action native-report-icon-button" onClick={() => void queryReport()} disabled={loading}>
-          <span className="material-symbols-outlined" aria-hidden="true">search</span>
+          <Icon name="search" />
           {copy.fields.query}
         </button>
         <button type="button" className="soft-action native-report-icon-button" onClick={clearFilters} disabled={loading}>
-          <span className="material-symbols-outlined" aria-hidden="true">close</span>
+          <Icon name="close" />
           {copy.fields.clear}
         </button>
         <button type="button" className="soft-action native-report-export-excel native-report-icon-button" onClick={() => void exportExcel()} disabled={loading || exportingExcel}>
-          <span className="material-symbols-outlined" aria-hidden="true">table_view</span>
+          <Icon name="table_view" />
           {copy.fields.exportExcel}
         </button>
         <button type="button" className="soft-action native-report-export-pdf native-report-icon-button" onClick={() => void exportPdf()} disabled={!report || report.rows.length === 0 || exportingPdf}>
-          <span className="material-symbols-outlined" aria-hidden="true">picture_as_pdf</span>
+          <Icon name="picture_as_pdf" />
           {copy.fields.exportPdf}
         </button>
         <div className="native-report-toolbar-pagination">

@@ -17,6 +17,7 @@ import { RecipeQYJ } from './components/RecipeQYJ'
 import { NativeFactoryReport } from './components/NativeFactoryReport'
 import { MotorFaultReport } from './components/MotorFaultReport'
 import { WorkOrderManagement } from './components/WorkOrderManagement'
+import { Icon } from './components/Icon'
 
 
 
@@ -92,19 +93,19 @@ const LOGIN_SUBTITLE = `${LOGIN_SOFTWARE_VERSION}_${LOGIN_GIT_DATETIME}_Git:${LO
 
 function EfficiencySidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">analytics</span>
+    <Icon name="analytics" style={{ fontSize: '18px' }} />
   )
 }
 
 function ProductionSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">bar_chart</span>
+    <Icon name="bar_chart" style={{ fontSize: '18px' }} />
   )
 }
 
 function WorkOrderCreateSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">assignment_add</span>
+    <Icon name="assignment_add" style={{ fontSize: '18px' }} />
   )
 }
 
@@ -113,73 +114,73 @@ const REWORK_ICON_SET: ReworkIconSet = 4
 
 function ReworkManageIcon({ set: _set }: { set: ReworkIconSet }) {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">build_circle</span>
+    <Icon name="build_circle" style={{ fontSize: '18px' }} />
   )
 }
 
 function ReworkConfigIcon({ set: _set }: { set: ReworkIconSet }) {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">tune</span>
+    <Icon name="tune" style={{ fontSize: '18px' }} />
   )
 }
 
 function ReworkRecordIcon({ set: _set }: { set: ReworkIconSet }) {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">description</span>
+    <Icon name="description" style={{ fontSize: '18px' }} />
   )
 }
 
 function DashboardSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">dashboard</span>
+    <Icon name="dashboard" style={{ fontSize: '18px' }} />
   )
 }
 
 function FactoryRecordSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">assignment</span>
+    <Icon name="assignment" style={{ fontSize: '18px' }} />
   )
 }
 
 function FaultSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">warning</span>
+    <Icon name="warning" style={{ fontSize: '18px' }} />
   )
 }
 
 function FaultTrackingSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">error</span>
+    <Icon name="error" style={{ fontSize: '18px' }} />
   )
 }
 
 function RecipeSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">science</span>
+    <Icon name="science" style={{ fontSize: '18px' }} />
   )
 }
 
 function UserLoginSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">person</span>
+    <Icon name="person" style={{ fontSize: '18px' }} />
   )
 }
 
 function ReportConfigSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">tune</span>
+    <Icon name="tune" style={{ fontSize: '18px' }} />
   )
 }
 
 function TagSidebarIcon() {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">label</span>
+    <Icon name="label" style={{ fontSize: '18px' }} />
   )
 }
 
 function SidebarCollapseIcon({ collapsed }: { collapsed: boolean }) {
   return (
-    <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">{collapsed ? 'chevron_right' : 'chevron_left'}</span>
+    <Icon name={collapsed ? 'chevron_right' : 'chevron_left'} style={{ fontSize: '18px' }} />
   )
 }
 
@@ -224,7 +225,7 @@ const baseSidebarItems: SidebarItem[] = [
   { key: 'rework', label: '返修管理', icon: <ReworkManageIcon set={REWORK_ICON_SET} /> },
   { key: 'reworkConfig', label: '返修组态', icon: <ReworkConfigIcon set={REWORK_ICON_SET} /> },
   { key: 'reworkRecords', label: '返修记录', icon: <ReworkRecordIcon set={REWORK_ICON_SET} /> },
-  { key: 'help', label: '帮助', icon: <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">help</span> },
+  { key: 'help', label: '帮助', icon: <Icon name="help" style={{ fontSize: '18px' }} /> },
 ]
 
 const configurableMenuItems: Array<{ key: ConfigurableMenuKey; title: string; group: string; description: string }> = [
@@ -246,7 +247,7 @@ const alwaysVisibleSidebarItems: SidebarItem[] = []
 
 const protectedSidebarItems: SidebarItem[] = [
   { key: 'runtime', label: '标签', icon: <TagSidebarIcon /> },
-  { key: 'tags', label: '订阅', icon: <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">notifications</span> },
+  { key: 'tags', label: '订阅', icon: <Icon name="notifications" style={{ fontSize: '18px' }} /> },
   { key: 'reportConfig', label: '报表配置', icon: <ReportConfigSidebarIcon /> },
   { key: 'uploadInsertAudits', label: '数据记录报告', icon: <FactoryRecordSidebarIcon /> },
 ]
@@ -2563,7 +2564,7 @@ function App() {
                 disabled={isSidebarCollapsed}
                 title={isSidebarCollapsed ? (isAuthenticated ? '注销' : '登录') : undefined}
               >
-                <span className="sidebar-auth-icon">{isAuthenticated ? <span className="material-symbols-outlined" style={{ fontSize: '18px' }} aria-hidden="true">logout</span> : <UserLoginSidebarIcon />}</span>
+                <span className="sidebar-auth-icon">{isAuthenticated ? <Icon name="logout" style={{ fontSize: '18px' }} /> : <UserLoginSidebarIcon />}</span>
                 <span className="sidebar-auth-label">{isAuthenticated ? '注销' : '登录'}</span>
               </button>
             </div>

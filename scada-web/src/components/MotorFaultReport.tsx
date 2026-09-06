@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { getGasEngineFaultReport, getGasEngineFaultTrace, getMotorFaultReport, getMotorFaultTrace, getSystemSettings } from '../api'
 import type { FaultTraceResponse, FaultTrackingReportResponse } from '../types'
+import { Icon } from './Icon'
 
 const PAGE_SIZE = 100
 type ReportLanguage = 'zh' | 'en'
@@ -265,8 +266,8 @@ export function MotorFaultReport({ onStatus, onLanguageChange, variant = 'motor'
         <label className="native-report-date-field"><span>{copy.fields.end}</span><input type="datetime-local" value={filters.to} onChange={(event) => setFilters((current) => ({ ...current, to: event.target.value }))} /></label>
         <label className="native-report-order-field"><span>{copy.fields.barcode}</span><input value={filters.tm} onChange={(event) => setFilters((current) => ({ ...current, tm: event.target.value }))} /></label>
         <label className="native-report-station-field"><span>{copy.fields.station}</span><input inputMode="numeric" value={filters.gw} onChange={(event) => setFilters((current) => ({ ...current, gw: event.target.value }))} /></label>
-        <button type="button" className="primary-action native-report-icon-button" onClick={() => void query()} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true">search</span>{copy.fields.query}</button>
-        <button type="button" className="soft-action native-report-icon-button" onClick={() => { setFilters(defaultFilters()); setReport(null); setPage(1) }} disabled={loading}><span className="material-symbols-outlined" aria-hidden="true">close</span>{copy.fields.clear}</button>
+        <button type="button" className="primary-action native-report-icon-button" onClick={() => void query()} disabled={loading}><Icon name="search" />{copy.fields.query}</button>
+        <button type="button" className="soft-action native-report-icon-button" onClick={() => { setFilters(defaultFilters()); setReport(null); setPage(1) }} disabled={loading}><Icon name="close" />{copy.fields.clear}</button>
         <div className="native-report-toolbar-pagination"><button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={!report || normalizedPage <= 1}>{copy.fields.previous}</button><strong>{report ? `${normalizedPage}/${totalPages}` : '0/0'}</strong><button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={!report || normalizedPage >= totalPages}>{copy.fields.next}</button></div>
       </section>
       <section className="native-report-body">
@@ -277,7 +278,7 @@ export function MotorFaultReport({ onStatus, onLanguageChange, variant = 'motor'
             const trace = traces[traceKey]
             const isExpanded = expandedTraceKey === traceKey
             return <Fragment key={traceKey}>
-              <tr>{columns.map((column) => <td key={column.key} className={`align-${column.key === 'sj' || column.key === 'trace' ? 'center' : 'left'}${column.key === 'mode' ? row.mode === '0' ? ' motor-fault-mode-factory' : row.mode === '1' ? ' motor-fault-mode-endurance' : '' : ''}`}>{column.key === 'trace' ? <button type="button" className="motor-fault-trace-button" onClick={() => void toggleTrace(row, rowIndex)} aria-label={copy.columns.trace} title={copy.columns.trace} aria-expanded={isExpanded}><span className="material-symbols-outlined" aria-hidden="true">chart_data</span></button> : formatCellValue(column.key, row[column.key] ?? null, pressureUnit, flowUnit, copy.modes)}</td>)}</tr>
+              <tr>{columns.map((column) => <td key={column.key} className={`align-${column.key === 'sj' || column.key === 'trace' ? 'center' : 'left'}${column.key === 'mode' ? row.mode === '0' ? ' motor-fault-mode-factory' : row.mode === '1' ? ' motor-fault-mode-endurance' : '' : ''}`}>{column.key === 'trace' ? <button type="button" className="motor-fault-trace-button" onClick={() => void toggleTrace(row, rowIndex)} aria-label={copy.columns.trace} title={copy.columns.trace} aria-expanded={isExpanded}><Icon name="chart_data" /></button> : formatCellValue(column.key, row[column.key] ?? null, pressureUnit, flowUnit, copy.modes)}</td>)}</tr>
               {isExpanded ? <tr className="motor-fault-trace-row"><td colSpan={columns.length}>{loadingTraceKey === traceKey ? <div className="motor-fault-trace-state">{copy.fields.traceLoading}</div> : trace && trace.points.length ? <FaultTraceChart trace={trace} pressureUnit={pressureUnit} flowUnit={flowUnit} signalKey={signalKey} signalUnit={isGas ? 'RPM' : 'A'} labels={{ signal: copy.columns[signalKey], pressure: copy.columns.pressure, flow: copy.columns.flow, chartAria: copy.fields.traceChart }} /> : <div className="motor-fault-trace-state">{copy.fields.traceEmpty}</div>}</td></tr> : null}
             </Fragment>
           }) : <tr><td className="native-report-empty" colSpan={columns.length}>{loading ? copy.fields.loading : copy.fields.empty}</td></tr>}</tbody></table></div></section>
