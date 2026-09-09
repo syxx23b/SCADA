@@ -602,6 +602,12 @@ public sealed class ScadaRuntimeCoordinator : IScadaRuntimeCoordinator
 
         if (device is not null)
         {
+            if (device.Status == status)
+            {
+                // 状态未变化:不写库、不广播,避免离线重试造成 DB 写与 SignalR 刷屏。
+                return;
+            }
+
             device.Status = status;
             device.UpdatedAt = DateTimeOffset.UtcNow;
             await dbContext.SaveChangesAsync(cancellationToken);

@@ -28,3 +28,7 @@ tags_scada_db_before*.csv
 
 # Certificates and local machine stores
 roots.sst
+
+# Local artifacts (not for version control)
+SCADA-Setup-*.exe
+*.bak

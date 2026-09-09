@@ -115,6 +115,11 @@ app.Use(async (context, next) =>
         return;
     }
 
+    if (context.Response.HasStarted)
+    {
+        return;
+    }
+
     var responseContentType = context.Response.ContentType ?? string.Empty;
     if (!responseContentType.StartsWith("text/html", StringComparison.OrdinalIgnoreCase))
     {
