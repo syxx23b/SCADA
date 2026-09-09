@@ -11,7 +11,6 @@ namespace Scada.Api.Services;
 public sealed class RealTimeDataRecorderHostedService : BackgroundService
 {
     private static readonly TimeSpan CaptureInterval = TimeSpan.FromMilliseconds(500);
-    private static readonly TimeSpan CleanupInterval = TimeSpan.FromHours(1);
     private static readonly Regex FaceplateTagPattern = new(
         @"^HMI_DB\.(?:HMI_Faceplates|Faceplates)\[(?<station>\d+)\]\.(?<field>[^.]+)$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -23,7 +22,7 @@ public sealed class RealTimeDataRecorderHostedService : BackgroundService
     private readonly TagSnapshotCache _snapshotCache;
     private readonly IScadaRuntimeCoordinator _runtimeCoordinator;
     private readonly ILogger<RealTimeDataRecorderHostedService> _logger;
-    private DateTime _nextCleanupUtc = DateTime.MinValue;
+    private DateTime _nextCleanupUtc = DateTime.UtcNow; // 首次清理安排在下一个本地 12:00。
 
     public RealTimeDataRecorderHostedService(
         IServiceScopeFactory scopeFactory,
@@ -68,13 +67,14 @@ public sealed class RealTimeDataRecorderHostedService : BackgroundService
         await using var scope = _scopeFactory.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ScadaDbContext>();
 
+        // 每天中午 12:00(本机时间)执行一次保留期清理,避免每小时扫一次大表。
         if (DateTime.UtcNow >= _nextCleanupUtc)
         {
             var cutoff = DateTime.UtcNow.AddMonths(-6);
             await dbContext.RealTimeData
                 .Where(item => item.Sj < cutoff)
                 .ExecuteDeleteAsync(cancellationToken);
-            _nextCleanupUtc = DateTime.UtcNow.Add(CleanupInterval);
+            _nextCleanupUtc = GetNextNoonUtc();
         }
 
         var tags = await dbContext.Tags
@@ -131,6 +131,19 @@ public sealed class RealTimeDataRecorderHostedService : BackgroundService
 
         dbContext.RealTimeData.AddRange(rows);
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static DateTime GetNextNoonUtc()
+    {
+        // 按本机时区计算"下一个 12:00",并换算为 UTC 用于比较。
+        var localNow = DateTime.Now;
+        var nextLocalNoon = localNow.Date.AddHours(12);
+        if (nextLocalNoon <= localNow)
+        {
+            nextLocalNoon = nextLocalNoon.AddDays(1);
+        }
+
+        return nextLocalNoon.ToUniversalTime();
     }
 
     private static bool TryGetStation(string displayName, out int station)
