@@ -45,10 +45,19 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
     };
     private static readonly TimeSpan DataRetention = TimeSpan.FromDays(7);
 
+    // 段"仍打开"的判定窗口:最近 3 秒内还在延展(配合 1s 采集,容纳捕获抖动)。
+    private static readonly TimeSpan OpenSegmentGrace = TimeSpan.FromSeconds(3);
+
+    // 空白后重启/首开新段时,把 StartedAt 回填 1 个采样,使新段立即可见且时长≈now。
+    private static readonly TimeSpan NewSegmentStartBackdate = TimeSpan.FromSeconds(1);
+
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IScadaRuntimeCoordinator _runtimeCoordinator;
     private readonly ILogger<EfficiencyAnalysisService> _logger;
     private readonly SemaphoreSlim _syncLock = new(1, 1);
+
+    // 一次性清理旧版本残留的 Disconnected 段(新语义不再把"未工作"落库)。
+    private bool _disconnectedSegmentsPurged;
 
     public EfficiencyAnalysisService(
         IServiceScopeFactory scopeFactory,
@@ -68,6 +77,7 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
             await using var scope = _scopeFactory.CreateAsyncScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<ScadaDbContext>();
             var now = DateTimeOffset.UtcNow;
+            await PurgeDisconnectedSegmentsOnceAsync(dbContext, cancellationToken);
             await CaptureLiveStateInternalAsync(dbContext, now, null, cancellationToken);
             await CleanupOldSegmentsAsync(dbContext, now, cancellationToken);
             if (dbContext.ChangeTracker.HasChanges())
@@ -93,6 +103,7 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
             var windowEnd = DateTimeOffset.UtcNow;
             var windowStart = windowEnd.AddHours(-clampedHours);
 
+            await PurgeDisconnectedSegmentsOnceAsync(dbContext, cancellationToken);
             await CaptureLiveStateInternalAsync(dbContext, windowEnd, faceplateIndexes, cancellationToken);
             await CleanupOldSegmentsAsync(dbContext, windowEnd, cancellationToken);
             if (dbContext.ChangeTracker.HasChanges())
@@ -126,13 +137,16 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
                     .Where(item => item.EndedAt > item.StartedAt)
                     .ToList();
 
-                var latestState = laneSegments.LastOrDefault();
+                // "now" 状态只看仍在打开(覆盖到窗口终点 windowEnd)的段;
+                // 未工作(Disconnected)不再落段,当前无打开段时回退为 disconnected,保持前端契约不变。
+                var currentSegment = laneSegments.LastOrDefault(item => item.EndedAt >= windowEnd);
+                var lastSegment = laneSegments.LastOrDefault();
                 return new EfficiencyTimelineLaneDto(
                     faceplateIndex,
-                    latestState?.StationName ?? $"工位{faceplateIndex}",
-                    latestState?.StateKey ?? EfficiencyStateKind.Disconnected.ToStateKey(),
-                    latestState?.StateLabel ?? EfficiencyStateKind.Disconnected.ToStateLabel(),
-                    latestState?.ColorHex ?? EfficiencyStateKind.Disconnected.ToColorHex(),
+                    currentSegment?.StationName ?? lastSegment?.StationName ?? $"工位{faceplateIndex}",
+                    currentSegment?.StateKey ?? EfficiencyStateKind.Disconnected.ToStateKey(),
+                    currentSegment?.StateLabel ?? EfficiencyStateKind.Disconnected.ToStateLabel(),
+                    currentSegment?.ColorHex ?? EfficiencyStateKind.Disconnected.ToColorHex(),
                     laneSegments);
             }).ToArray();
 
@@ -212,28 +226,36 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
             .ThenByDescending(item => item.StartedAt)
             .FirstOrDefaultAsync(cancellationToken);
 
-        if (latestSegment is null)
+        // 段是否"仍打开":最近 3 秒内仍在延展(配合 1s 采集,3s 缓冲容纳捕获抖动)。
+        // 历史残留的 Disconnected 段一律视为已收口,绝不被顺延或拼接。
+        var latestStillOpen = latestSegment is not null
+            && latestSegment.State != EfficiencyStateKind.Disconnected
+            && latestSegment.EndedAt >= now.Add(-OpenSegmentGrace);
+
+        if (state.State == EfficiencyStateKind.Disconnected)
         {
-            dbContext.EfficiencyTimelineSegments.Add(new EfficiencyTimelineSegmentEntity
+            // 未工作(Disconnected)不入库:若上一条段仍在延展则把它收口到 now;
+            // 若早已收口(中间已是未工作空白),什么都不写,保持空白。
+            if (latestStillOpen)
             {
-                FaceplateIndex = state.FaceplateIndex,
-                StationName = state.StationName,
-                State = state.State,
-                StartedAt = now.AddSeconds(-1),
-                EndedAt = now,
-                UpdatedAt = now,
-                IsDemo = false,
-            });
+                latestSegment!.EndedAt = now;
+                latestSegment!.UpdatedAt = now;
+            }
+
             return;
         }
 
-        if (latestSegment.EndedAt > now)
+        if (latestSegment is null || !latestStillOpen)
         {
-            latestSegment.EndedAt = now;
+            // 无历史段,或上一条段早已收口(与 now 之间存在未工作空白):
+            // 不回填空白,直接从 now 起新段(StartedAt≈now,回填 1 个采样使其立即可见)。
+            dbContext.EfficiencyTimelineSegments.Add(CreateLiveSegment(state, now, backdateStart: true));
+            return;
         }
 
         if (latestSegment.State == state.State)
         {
+            // 同状态且仍打开:顺延 EndedAt 到 now。
             latestSegment.StationName = state.StationName;
             latestSegment.EndedAt = now;
             latestSegment.UpdatedAt = now;
@@ -241,19 +263,40 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
             return;
         }
 
+        // 变状态且旧段仍打开:先收口旧段到 now,再开新段(StartedAt≈now,不重叠)。
         latestSegment.EndedAt = now;
         latestSegment.UpdatedAt = now;
+        dbContext.EfficiencyTimelineSegments.Add(CreateLiveSegment(state, now, backdateStart: false));
+    }
 
-        dbContext.EfficiencyTimelineSegments.Add(new EfficiencyTimelineSegmentEntity
+    private static EfficiencyTimelineSegmentEntity CreateLiveSegment(FaceplateBoardState state, DateTimeOffset now, bool backdateStart)
+    {
+        return new EfficiencyTimelineSegmentEntity
         {
             FaceplateIndex = state.FaceplateIndex,
             StationName = state.StationName,
             State = state.State,
-            StartedAt = now,
+            StartedAt = backdateStart ? now.Add(-NewSegmentStartBackdate) : now,
             EndedAt = now,
             UpdatedAt = now,
             IsDemo = false,
-        });
+        };
+    }
+
+    private async Task PurgeDisconnectedSegmentsOnceAsync(ScadaDbContext dbContext, CancellationToken cancellationToken)
+    {
+        if (_disconnectedSegmentsPurged)
+        {
+            return;
+        }
+
+        // 旧版本会把 Disconnected 持久化为段;新语义"未工作不入库、只留空白",
+        // 服务启动后首次采集/查询时顺带清掉历史残留,保证响应/落库都不再出现 disconnected 段。
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "DELETE FROM [OEE].[EfficiencyTimelineSegments] WHERE [State] = N'Disconnected'",
+            cancellationToken);
+        _disconnectedSegmentsPurged = true;
+        _logger.LogInformation("Purged legacy Disconnected efficiency timeline segments (unworked is no longer persisted).");
     }
 
     private async Task CleanupOldSegmentsAsync(ScadaDbContext dbContext, DateTimeOffset now, CancellationToken cancellationToken)
@@ -295,10 +338,11 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
         DateTimeOffset windowStart,
         DateTimeOffset windowEnd)
     {
+        // 演示补档只生成工作状态段(Standby/Running/Fault);
+        // 未工作(Disconnected)按新语义不生成,靠段间空白呈现。
         var plan = faceplateIndex == 1
             ? new (EfficiencyStateKind State, int Minutes)[]
             {
-                (EfficiencyStateKind.Disconnected, 56),
                 (EfficiencyStateKind.Standby, 42),
                 (EfficiencyStateKind.Running, 168),
                 (EfficiencyStateKind.Fault, 18),
@@ -312,7 +356,6 @@ public sealed class EfficiencyAnalysisService : IEfficiencyAnalysisService
                 (EfficiencyStateKind.Standby, 64),
                 (EfficiencyStateKind.Running, 132),
                 (EfficiencyStateKind.Fault, 24),
-                (EfficiencyStateKind.Disconnected, 30),
                 (EfficiencyStateKind.Standby, 38),
                 (EfficiencyStateKind.Running, 176),
                 (EfficiencyStateKind.Fault, 14),

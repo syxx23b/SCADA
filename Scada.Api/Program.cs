@@ -87,7 +87,6 @@ END
 """);
     EnsureRepairRecordSchema(dbContext);
     await ReworkConfigSchemaInitializer.EnsureInitializedAsync(scadaConnectionString, CancellationToken.None);
-    RunUploadInsertAuditRetentionIfDue(dbContext);
     app.Logger.LogInformation("Database initialized successfully");
 }
 
@@ -292,33 +291,6 @@ BEGIN
 END
 """;
     dbContext.Database.ExecuteSqlRaw(ensureTagValueStatesSql);
-
-    const string ensureUploadInsertAuditsSql = """
-IF OBJECT_ID(N'[Process].[UploadInsertAudits]', N'U') IS NULL
-BEGIN
-    CREATE TABLE [Process].[UploadInsertAudits](
-        [Id] bigint IDENTITY(1,1) NOT NULL CONSTRAINT [PK_UploadInsertAudits] PRIMARY KEY,
-        [StationIndex] int NOT NULL,
-        [TriggerKind] nvarchar(16) NOT NULL,
-        [TargetTable] nvarchar(64) NOT NULL,
-        [DisplayName] nvarchar(128) NOT NULL,
-        [Tm] nvarchar(80) NULL,
-        [Gw] int NULL,
-        [OrderNo] nvarchar(80) NULL,
-        [Mode] int NULL,
-        [CreatedAt] datetimeoffset(7) NOT NULL
-    );
-END
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_UploadInsertAudits_CreatedAt' AND object_id = OBJECT_ID(N'[Process].[UploadInsertAudits]'))
-BEGIN
-    CREATE INDEX [IX_UploadInsertAudits_CreatedAt] ON [Process].[UploadInsertAudits]([CreatedAt]);
-END
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_UploadInsertAudits_StationIndex_TriggerKind_CreatedAt' AND object_id = OBJECT_ID(N'[Process].[UploadInsertAudits]'))
-BEGIN
-    CREATE INDEX [IX_UploadInsertAudits_StationIndex_TriggerKind_CreatedAt] ON [Process].[UploadInsertAudits]([StationIndex], [TriggerKind], [CreatedAt]);
-END
-""";
-    dbContext.Database.ExecuteSqlRaw(ensureUploadInsertAuditsSql);
 
     const string ensureSystemSettingsSql = """
 IF OBJECT_ID(N'[Process].[SystemSettings]', N'U') IS NULL
@@ -676,33 +648,6 @@ static void RunOneTimeMigration(ScadaDbContext dbContext, string name, string mi
         "    VALUES (N'" + name + "', SYSUTCDATETIME());\n" +
         "END";
     dbContext.Database.ExecuteSqlRaw(runOneTimeMigrationSql);
-}
-
-static void RunUploadInsertAuditRetentionIfDue(ScadaDbContext dbContext)
-{
-    const string retentionSql = """
-IF NOT EXISTS (SELECT 1 FROM [Process].[SchemaMigrations] WHERE [Name] = N'audit-retention-monthly')
-    OR DATEDIFF(second,
-                (SELECT [AppliedAt] FROM [Process].[SchemaMigrations] WHERE [Name] = N'audit-retention-monthly'),
-                SYSUTCDATETIME()) >= 43200
-BEGIN
-    DELETE FROM [Process].[UploadInsertAudits]
-    WHERE [CreatedAt] < DATEADD(month, -1, SYSUTCDATETIME());
-
-    IF NOT EXISTS (SELECT 1 FROM [Process].[SchemaMigrations] WHERE [Name] = N'audit-retention-monthly')
-    BEGIN
-        INSERT INTO [Process].[SchemaMigrations] ([Name], [AppliedAt])
-        VALUES (N'audit-retention-monthly', SYSUTCDATETIME());
-    END
-    ELSE
-    BEGIN
-        UPDATE [Process].[SchemaMigrations]
-        SET [AppliedAt] = SYSUTCDATETIME()
-        WHERE [Name] = N'audit-retention-monthly';
-    END
-END
-""";
-    dbContext.Database.ExecuteSqlRaw(retentionSql);
 }
 
 static void EnsureRepairRecordSchema(ScadaDbContext dbContext)

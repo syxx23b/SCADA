@@ -1321,26 +1321,40 @@ public sealed class ProductionController : ControllerBase
             return string.Empty;
         }
 
-        var numeric = decimal.TryParse(value, NumberStyles.Any, CultureInfo.InvariantCulture, out var parsed)
-            ? parsed
-            : (decimal?)null;
         var trimmed = value.Trim();
-        var oneDecimal = numeric.HasValue ? numeric.Value.ToString("0.0", CultureInfo.InvariantCulture) : trimmed;
-        var wholeNumber = numeric.HasValue ? numeric.Value.ToString("0", CultureInfo.InvariantCulture) : trimmed;
+        if (!decimal.TryParse(trimmed, NumberStyles.Any, CultureInfo.InvariantCulture, out var numeric))
+        {
+            return trimmed;
+        }
+
+        // 与前端报表一致的小数位规范(逐列硬编码):
+        // 2 位:pressure/flow/holdingPressure/recoilPressure/current/lowCurrent/powerFactor
+        // 1 位:inletPressure/inletTemp/roomtemp/roomwet/voltage/lowVoltage/siphon
+        // 0 位:power/frequency/unloadSpeed/loadSpeed/speed
+        var text = columnKey switch
+        {
+            "pressure" or "flow" or "holdingPressure" or "recoilPressure" or "current" or "lowCurrent" or "powerFactor" =>
+                numeric.ToString("F2", CultureInfo.InvariantCulture),
+            "inletPressure" or "inletTemp" or "roomtemp" or "roomwet" or "voltage" or "lowVoltage" or "siphon" =>
+                numeric.ToString("F1", CultureInfo.InvariantCulture),
+            "power" or "frequency" or "unloadSpeed" or "loadSpeed" or "speed" =>
+                numeric.ToString("F0", CultureInfo.InvariantCulture),
+            _ => trimmed
+        };
 
         return columnKey switch
         {
-            "inletPressure" => $"{trimmed} bar",
-            "inletTemp" => $"{oneDecimal} ℃",
-            "lowVoltage" or "voltage" => $"{oneDecimal} V",
-            "lowCurrent" or "current" => $"{trimmed} A",
-            "frequency" => $"{wholeNumber} Hz",
-            "power" => $"{wholeNumber} W",
-            "unloadSpeed" or "loadSpeed" => $"{wholeNumber} RPM",
-            "pressure" or "holdingPressure" or "recoilPressure" => $"{trimmed} {pressureUnit}",
-            "flow" => $"{trimmed} {flowUnit}",
-            "siphon" => $"{oneDecimal} KPa",
-            _ => trimmed
+            "inletPressure" => $"{text} bar",
+            "inletTemp" => $"{text} ℃",
+            "lowVoltage" or "voltage" => $"{text} V",
+            "lowCurrent" or "current" => $"{text} A",
+            "frequency" => $"{text} Hz",
+            "power" => $"{text} W",
+            "unloadSpeed" or "loadSpeed" or "speed" => $"{text} RPM",
+            "pressure" or "holdingPressure" or "recoilPressure" => $"{text} {pressureUnit}",
+            "flow" => $"{text} {flowUnit}",
+            "siphon" => $"{text} KPa",
+            _ => text
         };
     }
 

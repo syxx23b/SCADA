@@ -24,8 +24,6 @@ public sealed class ScadaDbContext : DbContext
 
     public DbSet<WorkOrderEntity> WorkOrders => Set<WorkOrderEntity>();
 
-    public DbSet<UploadInsertAuditEntity> UploadInsertAudits => Set<UploadInsertAuditEntity>();
-
     public DbSet<RealTimeDataEntity> RealTimeData => Set<RealTimeDataEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -106,19 +104,6 @@ public sealed class ScadaDbContext : DbContext
             entity.Property(item => item.Status).HasMaxLength(40).IsRequired();
             entity.HasIndex(item => item.WorkOrderNo).IsUnique();
             entity.HasIndex(item => item.Status);
-        });
-
-        modelBuilder.Entity<UploadInsertAuditEntity>(entity =>
-        {
-            entity.ToTable("UploadInsertAudits", "Process");
-            entity.HasKey(item => item.Id);
-            entity.Property(item => item.TriggerKind).HasMaxLength(16).IsRequired();
-            entity.Property(item => item.TargetTable).HasMaxLength(64).IsRequired();
-            entity.Property(item => item.DisplayName).HasMaxLength(128).IsRequired();
-            entity.Property(item => item.Tm).HasMaxLength(80);
-            entity.Property(item => item.OrderNo).HasMaxLength(80);
-            entity.HasIndex(item => item.CreatedAt);
-            entity.HasIndex(item => new { item.StationIndex, item.TriggerKind, item.CreatedAt });
         });
 
         modelBuilder.Entity<RealTimeDataEntity>(entity =>

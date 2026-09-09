@@ -1,5 +1,6 @@
 import type {
   BrowseNode,
+  DataRecordRow,
   DeviceConnection,
   DeviceFormState,
   EfficiencyTimelineLane,
@@ -28,7 +29,6 @@ import type {
   WorkOrderCreateRequest,
   WorkOrderStatus,
   WorkOrderUpdateRequest,
-  UploadInsertAudit,
 } from './types'
 
 
@@ -238,8 +238,16 @@ export function updateSystemSettings(payload: SystemSettings) {
   })
 }
 
-export function getUploadInsertAudits() {
-  return request<UploadInsertAudit[]>('/api/production/upload-insert-audits')
+export function getDataRecords(params?: { from?: string; to?: string; station?: number; kind?: string; orderNo?: string; limit?: number }) {
+  const query = new URLSearchParams()
+  if (params?.from) query.set('from', params.from)
+  if (params?.to) query.set('to', params.to)
+  if (params?.station !== undefined) query.set('station', String(params.station))
+  if (params?.kind) query.set('kind', params.kind)
+  if (params?.orderNo) query.set('orderNo', params.orderNo)
+  if (params?.limit !== undefined) query.set('limit', String(params.limit))
+  const queryString = query.toString()
+  return request<DataRecordRow[]>(queryString ? `/api/production/data-records?${queryString}` : '/api/production/data-records')
 }
 
 export function getWorkOrders() {

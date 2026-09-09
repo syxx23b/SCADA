@@ -2,7 +2,9 @@ namespace Scada.Api.Services;
 
 public sealed class EfficiencyTimelineCollectorHostedService : BackgroundService
 {
-    private static readonly TimeSpan CaptureInterval = TimeSpan.FromSeconds(5);
+    // 采集周期:1 秒。配合"未工作(Disconnected)不入库"语义,
+    // 让变状态/收口的判定误差控制在单次采样内。
+    private static readonly TimeSpan CaptureInterval = TimeSpan.FromSeconds(1);
 
     private readonly IEfficiencyAnalysisService _efficiencyAnalysisService;
     private readonly ILogger<EfficiencyTimelineCollectorHostedService> _logger;

@@ -72,8 +72,8 @@ public sealed class Upload2SqlWriterHostedService : BackgroundService
         var lookup = UploadTagLookup.Build(tags, stations);
         foreach (var station in stations)
         {
-            await ProcessRecordTriggerAsync(dbContext, station, lookup, cancellationToken);
-            await ProcessErrorTriggerAsync(dbContext, station, lookup, cancellationToken);
+            await ProcessRecordTriggerAsync(station, lookup, cancellationToken);
+            await ProcessErrorTriggerAsync(station, lookup, cancellationToken);
         }
     }
 
@@ -98,7 +98,7 @@ public sealed class Upload2SqlWriterHostedService : BackgroundService
             : DefaultStationCount;
     }
 
-    private async Task ProcessRecordTriggerAsync(ScadaDbContext dbContext, UploadStationDefinition station, UploadTagLookup lookup, CancellationToken cancellationToken)
+    private async Task ProcessRecordTriggerAsync(UploadStationDefinition station, UploadTagLookup lookup, CancellationToken cancellationToken)
     {
         var triggerTag = lookup.GetUploadTag(station.Index, "update");
         var currentState = ReadHealthyBool(triggerTag);
@@ -108,7 +108,6 @@ public sealed class Upload2SqlWriterHostedService : BackgroundService
             {
                 await InsertRecordAsync(station, lookup, cancellationToken);
                 await ResetTriggerAsync(triggerTag, cancellationToken);
-                await AddInsertAuditAsync(dbContext, station, "Update", "dbo.Record", triggerTag, lookup, cancellationToken);
                 _lastUpdateState[station.Index] = false;
                 _logger.LogInformation("Upload2SQL[{Index}] Record inserted and update reset.", station.Index);
                 return;
@@ -123,7 +122,7 @@ public sealed class Upload2SqlWriterHostedService : BackgroundService
         _lastUpdateState[station.Index] = currentState;
     }
 
-    private async Task ProcessErrorTriggerAsync(ScadaDbContext dbContext, UploadStationDefinition station, UploadTagLookup lookup, CancellationToken cancellationToken)
+    private async Task ProcessErrorTriggerAsync(UploadStationDefinition station, UploadTagLookup lookup, CancellationToken cancellationToken)
     {
         var triggerTag = lookup.GetUploadTag(station.Index, "updateErr");
         var currentState = ReadHealthyBool(triggerTag);
@@ -133,7 +132,6 @@ public sealed class Upload2SqlWriterHostedService : BackgroundService
             {
                 await InsertErrorAsync(station, lookup, cancellationToken);
                 await ResetTriggerAsync(triggerTag, cancellationToken);
-                await AddInsertAuditAsync(dbContext, station, "UpdateErr", "dbo.Error", triggerTag, lookup, cancellationToken);
                 _lastUpdateErrState[station.Index] = false;
                 _logger.LogInformation("Upload2SQL[{Index}] Error inserted and updateErr reset.", station.Index);
                 return;
@@ -221,35 +219,6 @@ public sealed class Upload2SqlWriterHostedService : BackgroundService
         AddFloat(command, "@speed", ReadDouble(lookup.GetUploadTag(station.Index, "RecordErr.speed")));
 
         await command.ExecuteNonQueryAsync(cancellationToken);
-    }
-
-    private async Task AddInsertAuditAsync(
-        ScadaDbContext dbContext,
-        UploadStationDefinition station,
-        string triggerKind,
-        string targetTable,
-        TagDefinitionEntity? triggerTag,
-        UploadTagLookup lookup,
-        CancellationToken cancellationToken)
-    {
-        var now = DateTimeOffset.UtcNow;
-        dbContext.UploadInsertAudits.Add(new UploadInsertAuditEntity
-        {
-            StationIndex = station.Index,
-            TriggerKind = triggerKind,
-            TargetTable = targetTable,
-            DisplayName = triggerTag?.DisplayName ?? $"Upload2SQL[{station.Index}].{triggerKind}",
-            Tm = ReadString(lookup.GetUploadTag(station.Index, "tm")),
-            Gw = ReadInt(lookup.GetUploadTag(station.Index, "gw")),
-            OrderNo = ReadString(lookup.GetLocalTag($"OrderNo[{station.Index}]")),
-            Mode = ReadInt(lookup.GetUploadTag(station.Index, "Record.mode")),
-            CreatedAt = now,
-        });
-
-        await dbContext.UploadInsertAudits
-            .Where(item => item.CreatedAt < now.AddMonths(-1))
-            .ExecuteDeleteAsync(cancellationToken);
-        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     private async Task ResetTriggerAsync(TagDefinitionEntity? triggerTag, CancellationToken cancellationToken)

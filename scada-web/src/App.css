@@ -1042,6 +1042,16 @@ table {
   margin-top: 2px;
 }
 
+/* 登录/注销固定钉在侧边栏最底部 */
+.sidebar-auth-pin {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  margin-top: auto;
+  padding: 10px 0 2px;
+  flex-shrink: 0;
+}
+
 /* 保证在最终覆盖样式下仍可生效 */
 .sidebar-auth-inline {
   width: var(--sidebar-content-width) !important;
@@ -2930,6 +2940,28 @@ body,
   content: none !important;
 }
 
+/* 效率分析标题栏:与故障分析(.fault-page)同字体/同高度 */
+.efficiency-header .production-title {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  font-size: 1.2rem;
+  line-height: 1.1;
+  font-weight: 800;
+  color: rgb(0, 95, 135);
+  font-family: "HarmonyOS Sans SC Medium", "HarmonyOS Sans SC", "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+.efficiency-header .production-title::before {
+  content: "EFFICIENCY ANALYSIS";
+  font-size: 0.62rem;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #8b97ae;
+}
+
 .production-card {
   background: #ffffff;
   border-radius: 0;
@@ -3690,74 +3722,6 @@ body,
 
 .report-config-insert-table {
   min-width: 0;
-}
-
-.upload-insert-page-shell {
-  gap: 12px;
-  height: 100vh;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.upload-insert-topbar {
-  flex: 0 0 auto;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
-}
-
-.upload-insert-audit-card {
-  flex: 1 1 auto;
-  min-height: 0;
-  margin: 0;
-}
-
-.upload-insert-audit-card .report-config-insert-shell {
-  height: 100%;
-  max-height: none;
-  overflow: auto;
-}
-
-.upload-insert-action-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.upload-insert-retention {
-  color: #6b7280;
-  font-size: 0.82rem;
-  font-weight: 600;
-}
-
-.upload-insert-audit-table {
-  width: 100%;
-  table-layout: fixed;
-}
-
-table.runtime-table.upload-insert-audit-table thead tr th,
-table.runtime-table.upload-insert-audit-table tbody tr td {
-  text-align: center !important;
-  vertical-align: middle;
-}
-
-.upload-insert-time-col {
-  width: 24%;
-}
-
-.upload-insert-kind-col {
-  width: 16%;
-}
-
-.upload-insert-station-col {
-  width: 12%;
-}
-
-.upload-insert-variable-col {
-  width: 30%;
-}
-
-.upload-insert-target-col {
-  width: 18%;
 }
 
 .report-config-insert-table th,

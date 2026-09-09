@@ -54,13 +54,45 @@ function initialLanguage(): ReportLanguage {
   }
 }
 
+// Canonical decimal places per report column key (table cells + trace tooltip text only).
+// Keys not listed here keep their existing output untouched.
+const DECIMAL_PLACES_BY_COLUMN_KEY: Record<string, number> = {
+  pressure: 2,
+  flow: 2,
+  holdingPressure: 2,
+  recoilPressure: 2,
+  siphon: 1,
+  current: 2,
+  lowCurrent: 2,
+  powerFactor: 2,
+  inletPressure: 1,
+  inletTemp: 1,
+  roomtemp: 1,
+  roomwet: 1,
+  power: 0,
+  frequency: 0,
+  lowVoltage: 1,
+  voltage: 1,
+  unloadSpeed: 0,
+  loadSpeed: 0,
+  speed: 0,
+}
+
+function formatDecimalFor(columnKey: string, value: string | number | null | undefined) {
+  const digits = DECIMAL_PLACES_BY_COLUMN_KEY[columnKey]
+  if (digits === undefined || value === null || value === undefined || value === '') return value
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric.toFixed(digits) : value
+}
+
 function formatCellValue(key: string, value: string | null, pressureUnit: string, flowUnit: string, modeLabels: { factory: string; endurance: string }) {
   if (!value) return '-'
   if (key === 'mode') return value === '0' ? modeLabels.factory : value === '1' ? modeLabels.endurance : value
-  if (key === 'current') return `${value} A`
-  if (key === 'speed') return `${value} RPM`
-  if (key === 'pressure') return `${value} ${pressureUnit}`
-  if (key === 'flow') return `${value} ${flowUnit}`
+  if (key === 'current') return `${formatDecimalFor(key, value)} A`
+  if (key === 'speed') return `${formatDecimalFor(key, value)} RPM`
+  if (key === 'pressure') return `${formatDecimalFor(key, value)} ${pressureUnit}`
+  if (key === 'flow') return `${formatDecimalFor(key, value)} ${flowUnit}`
+  if (DECIMAL_PLACES_BY_COLUMN_KEY[key] !== undefined) return `${formatDecimalFor(key, value)}`
   return value
 }
 
@@ -166,7 +198,7 @@ function FaultTraceChart({ trace, pressureUnit, flowUnit, signalKey, signalUnit,
           <div className="native-report-chart-y-axis">{yTicks.map((tick) => <span key={tick.label} style={{ top: `${(tick.y / 44) * 100}%` }}>{tick.label}</span>)}</div>
           {hover ? <div className={`native-report-chart-tooltip${hoverX > 72 ? ' align-right' : ''}`} style={{ left: `${hoverX}%` }}>
             <div>{hover.time.replace('T', ' ').slice(0, 19)}</div>
-            <div>{labels.signal}: {Number.isFinite(hover.signal) ? `${hover.signal.toFixed(2)} ${signalUnit}` : '-'}</div>
+            <div>{labels.signal}: {Number.isFinite(hover.signal) ? `${hover.signal.toFixed(DECIMAL_PLACES_BY_COLUMN_KEY[signalKey] ?? 2)} ${signalUnit}` : '-'}</div>
             <div>{labels.pressure}: {Number.isFinite(hover.pressure) ? `${hover.pressure.toFixed(2)} ${pressureUnit}` : '-'}</div>
             <div>{labels.flow}: {Number.isFinite(hover.flow) ? `${hover.flow.toFixed(2)} ${flowUnit}` : '-'}</div>
           </div> : null}

@@ -3,9 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr'
 import type { ChangeEvent, FormEvent, ReactNode } from 'react'
 import './App.css'
-import { browseDevice, connectDevice, createDevice, createTag, deleteDevice, deleteTag, disconnectDevice, exportAllTagsExcel, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, getFaultTodayByGw, getLatestReworkByTm, getRepairRecordDaily, getRepairRecords, getReworkHistoryByTm, getSystemSettings, getUploadInsertAudits, importTagsExcelReplace, openVncTool, touchRecipeSubscriptionLease, updateDevice, updateSystemSettings, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
+import { browseDevice, connectDevice, createDevice, createTag, deleteDevice, deleteTag, disconnectDevice, exportAllTagsExcel, getDataRecords, getDevices, getRuntimeOverview, getTags, getEfficiencyTimeline, getProductionTodayByGw, getFaultTodayByGw, getLatestReworkByTm, getRepairRecordDaily, getRepairRecords, getReworkHistoryByTm, getSystemSettings, importTagsExcelReplace, openVncTool, touchRecipeSubscriptionLease, updateDevice, updateSystemSettings, updateTag, writeTag, getRecipes, getRecipe, createRecipe, updateRecipe, deleteRecipe } from './api'
 
-import type { BrowseNode, DeviceConnection, DeviceFormState, EfficiencyTimelineResponse, FaultByGwResponse, ProductionByGwResponse, RepairRecordDailyResponse, RepairRecordListResponse, ReworkHistoryResponse, ReworkLookupResponse, RuntimeOverview, SystemSettings, TagDefinition, TagFormState, TagSnapshot, UploadInsertAudit } from './types'
+import type { BrowseNode, DataRecordRow, DeviceConnection, DeviceFormState, EfficiencyTimelineResponse, FaultByGwResponse, ProductionByGwResponse, RepairRecordDailyResponse, RepairRecordListResponse, ReworkHistoryResponse, ReworkLookupResponse, RuntimeOverview, SystemSettings, TagDefinition, TagFormState, TagSnapshot } from './types'
 import { EfficiencyAnalysis } from './components/EfficiencyAnalysis'
 import { FaultAnalysis } from './components/FaultAnalysis'
 import { ProductionStatistics } from './components/ProductionStatistics'
@@ -33,6 +33,7 @@ type ViewKey =
   | 'efficiency'
   | 'fault'
   | 'production'
+  | 'dataRecords'
   | 'workOrderCreate'
   | 'rework'
   | 'reworkConfig'
@@ -42,11 +43,9 @@ type ViewKey =
   | 'recipeDj'
   | 'recipeQyj'
   | 'reportConfig'
-  | 'uploadInsertAudits'
   | 'help'
   | 'login'
 type SidebarKey = ViewKey
-
 type RecipeTypeKey = 'DJRecipe' | 'QYJRecipe'
 type RuntimeStatus = { label: '正常' | '异常'; className: 'normal' | 'fault' }
 const LOCAL_DEVICE_ID = '__local__'
@@ -249,7 +248,7 @@ const protectedSidebarItems: SidebarItem[] = [
   { key: 'runtime', label: '标签', icon: <TagSidebarIcon /> },
   { key: 'tags', label: '订阅', icon: <Icon name="notifications" style={{ fontSize: '18px' }} /> },
   { key: 'reportConfig', label: '报表配置', icon: <ReportConfigSidebarIcon /> },
-  { key: 'uploadInsertAudits', label: '数据记录报告', icon: <FactoryRecordSidebarIcon /> },
+  { key: 'dataRecords', label: '数据记录报告', icon: <FactoryRecordSidebarIcon /> },
 ]
 
 const DASHBOARD_TEMPLATE_FIELDS = [
@@ -283,7 +282,7 @@ const DASHBOARD_TEMPLATE_FIELDS = [
 function getInitialView(): ViewKey {
   const value = new URLSearchParams(window.location.search).get('view')
   if (value === 'batch') return 'tags'
-  return value === 'dashboard' || value === 'nativeFactoryReportTest' || value === 'nativeEnduranceReportTest' || value === 'nativeGasEngineFactoryReportTest' || value === 'nativeGasEngineEnduranceReportTest' || value === 'motorFaultReport' || value === 'gasFaultReport' || value === 'efficiency' || value === 'fault' || value === 'production' || value === 'workOrderCreate' || value === 'rework' || value === 'reworkConfig' || value === 'reworkRecords' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'reportConfig' || value === 'uploadInsertAudits' || value === 'help' || value === 'login' ? value : 'dashboard'
+  return value === 'dashboard' || value === 'nativeFactoryReportTest' || value === 'nativeEnduranceReportTest' || value === 'nativeGasEngineFactoryReportTest' || value === 'nativeGasEngineEnduranceReportTest' || value === 'motorFaultReport' || value === 'gasFaultReport' || value === 'efficiency' || value === 'fault' || value === 'production' || value === 'dataRecords' || value === 'workOrderCreate' || value === 'rework' || value === 'reworkConfig' || value === 'reworkRecords' || value === 'runtime' || value === 'tags' || value === 'recipeDj' || value === 'recipeQyj' || value === 'reportConfig' || value === 'help' || value === 'login' ? value : 'dashboard'
 }
 
 const STATION_COUNT_STORAGE_KEY = 'scada-web.station-count'
@@ -710,6 +709,13 @@ function formatCount(value: number | null) {
   return Number.isInteger(value) ? value.toString() : Math.round(value).toString()
 }
 
+function formatDataRecordTime(value: string) {
+  const trimmed = (value ?? '').trim()
+  if (!trimmed) return '-'
+  const normalized = trimmed.length >= 19 ? trimmed.slice(0, 19) : trimmed
+  return normalized.replace('T', ' ')
+}
+
 function normalizeTrend(points: HistoryPoint[]) {
   if (points.length === 0) return []
   const usePoints = points.length === 1 ? [{ ts: points[0].ts - 60_000, value: points[0].value }, points[0]] : points
@@ -1003,8 +1009,9 @@ function App() {
   const [faultLoading, setFaultLoading] = useState(false)
   const [productionByGw, setProductionByGw] = useState<ProductionByGwResponse | null>(null)
   const [productionLoading, setProductionLoading] = useState(false)
-  const [uploadInsertAudits, setUploadInsertAudits] = useState<UploadInsertAudit[]>([])
-  const [uploadInsertAuditsLoading, setUploadInsertAuditsLoading] = useState(false)
+  const [dataRecords, setDataRecords] = useState<DataRecordRow[]>([])
+  const [dataRecordsLoading, setDataRecordsLoading] = useState(false)
+  const [dataRecordsError, setDataRecordsError] = useState<string | null>(null)
 
   const showStatus = (message: string) => {
 
@@ -1023,18 +1030,6 @@ function App() {
       console.error('加载系统配置失败:', error)
       setSystemSettingsLoaded(true)
       setStatusMessage(error instanceof Error ? error.message : '系统配置加载失败')
-    }
-  }, [])
-
-  const loadUploadInsertAudits = useCallback(async () => {
-    try {
-      setUploadInsertAuditsLoading(true)
-      const rows = await getUploadInsertAudits()
-      setUploadInsertAudits(rows)
-    } catch (error) {
-      console.error('加载 Insert 记录失败:', error)
-    } finally {
-      setUploadInsertAuditsLoading(false)
     }
   }, [])
 
@@ -1170,6 +1165,22 @@ function App() {
     const response = await getLatestReworkByTm(tm)
     setStatusMessage(response.found ? '返修记录查询完成' : '未找到匹配的返修记录')
     return response
+  }, [])
+
+  const loadDataRecords = useCallback(async () => {
+    try {
+      setDataRecordsError(null)
+      setDataRecordsLoading(true)
+      const rows = await getDataRecords()
+      setDataRecords(rows)
+      setStatusMessage(`数据记录报告已刷新：共 ${rows.length} 条`)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '数据记录报告加载失败'
+      setDataRecordsError(message)
+      setStatusMessage(message)
+    } finally {
+      setDataRecordsLoading(false)
+    }
   }, [])
 
   const handleLoadReworkHistory = useCallback(async (tm: string): Promise<ReworkHistoryResponse> => {
@@ -2190,19 +2201,40 @@ function App() {
     void loadSystemConfig()
   }, [loadSystemConfig])
   useEffect(() => {
-    if (!isAuthenticated && (view === 'reportConfig' || view === 'uploadInsertAudits')) {
+    if (!isAuthenticated && (view === 'reportConfig' || view === 'dataRecords')) {
       setView('login')
       setStatusMessage('请先登录后再访问受保护页面')
     }
   }, [isAuthenticated, view])
+  // 登录后 1 小时无操作自动注销(任意点击/按键会重置计时)。
   useEffect(() => {
-    if (!isAuthenticated || view !== 'uploadInsertAudits') return
-    void loadUploadInsertAudits()
-    const timer = window.setInterval(() => {
-      void loadUploadInsertAudits()
-    }, 5000)
-    return () => window.clearInterval(timer)
-  }, [isAuthenticated, loadUploadInsertAudits, view])
+    if (!isAuthenticated) return
+    const IDLE_TIMEOUT_MS = 60 * 60 * 1000
+    let timer: number | undefined
+    const reset = () => {
+      if (timer !== undefined) window.clearTimeout(timer)
+      timer = window.setTimeout(() => {
+        setIsAuthenticated(false)
+        setLoginUsername('')
+        setLoginPassword('')
+        setView('login')
+        setStatusMessage('1 小时无操作，已自动注销')
+      }, IDLE_TIMEOUT_MS)
+    }
+    reset()
+    const onActivity = () => reset()
+    window.addEventListener('pointerdown', onActivity)
+    window.addEventListener('keydown', onActivity)
+    return () => {
+      window.removeEventListener('pointerdown', onActivity)
+      window.removeEventListener('keydown', onActivity)
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [isAuthenticated])
+  useEffect(() => {
+    if (!isAuthenticated || view !== 'dataRecords') return
+    void loadDataRecords()
+  }, [isAuthenticated, loadDataRecords, view])
   useEffect(() => {
     if (!isAuthenticated && (view === 'runtime' || view === 'tags')) {
       setView('login')
@@ -2465,7 +2497,7 @@ function App() {
       return
     }
 
-    if (!isAuthenticated && (key === 'reportConfig' || key === 'uploadInsertAudits')) {
+    if (!isAuthenticated && (key === 'reportConfig' || key === 'dataRecords')) {
       setView('login')
       setStatusMessage('请先登录后再访问受保护页面')
       return
@@ -2529,7 +2561,6 @@ function App() {
 
   function renderSidebarButtons(mode: 'default' | 'runtime') {
     const isRuntime = mode === 'runtime'
-    const hasRuntimeEntry = sidebarItems.some((item) => item.key === 'runtime')
     const firstVisibleWorkOrderKey = sidebarItems.find((item) => WORK_ORDER_SERVICE_KEYS.includes(item.key as WorkOrderServiceKey))?.key
     const firstVisibleReworkKey = sidebarItems.find((item) => REWORK_SERVICE_KEYS.includes(item.key as ReworkServiceKey))?.key
     const reportServiceKeys: SidebarKey[] = ['nativeFactoryReportTest', 'nativeEnduranceReportTest', 'nativeGasEngineFactoryReportTest', 'nativeGasEngineEnduranceReportTest', 'motorFaultReport', 'gasFaultReport']
@@ -2540,7 +2571,7 @@ function App() {
     const rendered = sidebarItems.flatMap((item) => {
       const itemClass = isRuntime ? (view === item.key ? 'runtime-nav active' : 'runtime-nav') : (view === item.key ? 'nav-item active' : 'nav-item')
       const iconClass = isRuntime ? 'runtime-nav-icon' : 'nav-icon'
-      const hasEnglishTitle = item.key !== 'uploadInsertAudits' && /[A-Za-z]/.test(item.label)
+      const hasEnglishTitle = /[A-Za-z]/.test(item.label)
       const labelClass = [
         isRuntime ? 'runtime-nav-label' : 'nav-label',
         hasEnglishTitle ? 'nav-label-compact' : '',
@@ -2555,30 +2586,17 @@ function App() {
 
       if (item.key === 'runtime') {
         return [
-          <div key={`sidebar-auth-before-${mode}`}>
-            <div className="sidebar-auth-inline">
-              <button
-                type="button"
-                className="sidebar-auth-entry"
-                onClick={handleAuthEntryClick}
-                disabled={isSidebarCollapsed}
-                title={isSidebarCollapsed ? (isAuthenticated ? '注销' : '登录') : undefined}
-              >
-                <span className="sidebar-auth-icon">{isAuthenticated ? <Icon name="logout" style={{ fontSize: '18px' }} /> : <UserLoginSidebarIcon />}</span>
-                <span className="sidebar-auth-label">{isAuthenticated ? '注销' : '登录'}</span>
-              </button>
-            </div>
-            <button
-              type="button"
-              className={itemClass}
-              onClick={() => handleSidebarClick(item.key)}
-              disabled={isSidebarCollapsed}
-              title={itemTitle}
-            >
-              <span className={iconClass}>{item.icon}</span>
-              <span className={labelClass}>{item.label}</span>
-            </button>
-          </div>,
+          <button
+            key={`runtime-item-${mode}`}
+            type="button"
+            className={itemClass}
+            onClick={() => handleSidebarClick(item.key)}
+            disabled={isSidebarCollapsed}
+            title={itemTitle}
+          >
+            <span className={iconClass}>{item.icon}</span>
+            <span className={labelClass}>{item.label}</span>
+          </button>,
         ]
       }
 
@@ -2627,23 +2645,6 @@ function App() {
         ...suffix,
       ]
     })
-
-    if (!hasRuntimeEntry) {
-      rendered.push(
-        <div key={`sidebar-auth-tail-${mode}`} className="sidebar-auth-inline">
-          <button
-            type="button"
-            className="sidebar-auth-entry"
-            onClick={handleAuthEntryClick}
-            disabled={isSidebarCollapsed}
-            title={isSidebarCollapsed ? '登录' : undefined}
-          >
-            <span className="sidebar-auth-icon"><UserLoginSidebarIcon /></span>
-            <span className="sidebar-auth-label">登录</span>
-          </button>
-        </div>,
-      )
-    }
 
     return rendered
   }
@@ -3583,71 +3584,117 @@ function App() {
     </section>
   )
 
-  const uploadInsertAuditPage = (
-    <section className="page-shell report-page-shell report-config-shell upload-insert-page-shell">
-      <section className="report-config-topbar upload-insert-topbar">
-        <article className="tags-hero-card report-hero-card">
+  const dataRecordsPage = (
+    <section className="page-shell report-page-shell report-config-shell">
+      <section className="report-config-topbar" style={{ gridTemplateColumns: 'minmax(0, 1fr)' }}>
+        <article
+          className="tags-hero-card report-hero-card"
+          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}
+        >
           <div className="runtime-title-wrap">
             <div className="runtime-title-copy">
               <span className="runtime-title-kicker">DATA RECORD REPORT</span>
               <h1>数据记录报告</h1>
             </div>
           </div>
-        </article>
-        <article className="report-config-station-card upload-insert-action-card">
-          <div className="upload-insert-action-row">
-            <span className="upload-insert-retention">最近 1 个月</span>
-            <button type="button" className="soft-action" onClick={() => void loadUploadInsertAudits()}>
-              {uploadInsertAuditsLoading ? '刷新中' : '刷新'}
-            </button>
-          </div>
+          <button
+            type="button"
+            className="primary-action"
+            onClick={() => void loadDataRecords()}
+            disabled={dataRecordsLoading}
+            style={{ minHeight: 30, fontSize: 12, flexShrink: 0 }}
+          >
+            {dataRecordsLoading ? '刷新中…' : '刷新'}
+          </button>
         </article>
       </section>
 
-      <section className="report-config-insert-card upload-insert-audit-card">
-        <div className="runtime-table-shell report-config-insert-shell">
-          <table className="runtime-table report-config-insert-table upload-insert-audit-table">
+      <article className="report-config-insert-card" style={{ display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        {dataRecordsError ? (
+          <div className="rework-query-error" style={{ padding: '8px 16px' }}>查询失败：{dataRecordsError}</div>
+        ) : null}
+        <div>
+          <table className="runtime-table" style={{ width: '100%', tableLayout: 'fixed' }}>
             <colgroup>
-              <col className="upload-insert-time-col" />
-              <col className="upload-insert-kind-col" />
-              <col className="upload-insert-station-col" />
-              <col className="upload-insert-variable-col" />
-              <col className="upload-insert-target-col" />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '20%' }} />
+              <col style={{ width: '20%' }} />
             </colgroup>
             <thead>
               <tr>
-                <th>时间</th>
-                <th>类型</th>
-                <th>工位</th>
-                <th>变量</th>
-                <th>目标表</th>
+                <th style={{ textAlign: 'center' }}>模式</th>
+                <th style={{ textAlign: 'center' }}>时间</th>
+                <th style={{ textAlign: 'center' }}>工位</th>
+                <th style={{ textAlign: 'center' }}>类型</th>
+                <th>故障码</th>
               </tr>
             </thead>
             <tbody>
-              {uploadInsertAudits.length === 0 ? (
+              {dataRecordsLoading && dataRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="report-config-insert-empty">暂无 Insert 记录</td>
+                  <td colSpan={5} className="report-config-insert-empty">正在加载数据记录…</td>
                 </tr>
-              ) : uploadInsertAudits.map((row) => {
-                const isError = row.triggerKind.toLowerCase() === 'updateerr'
-                return (
-                  <tr key={row.id}>
-                    <td>{new Date(row.createdAt).toLocaleString('zh-CN', { hour12: false })}</td>
-                    <td>
-                      <span className={`insert-trigger-pill ${isError ? 'error' : 'normal'}`}>
-                        {row.triggerKind}
-                      </span>
-                    </td>
-                    <td>{row.stationIndex}</td>
-                    <td>{row.displayName}</td>
-                    <td>{row.targetTable}</td>
-                  </tr>
-                )
-              })}
+              ) : dataRecords.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="report-config-insert-empty">暂无数据记录</td>
+                </tr>
+              ) : (
+                dataRecords.map((row, rowIndex) => {
+                  return (
+                    <tr key={`${row.sj}-${row.gw}-${row.kind}-${rowIndex}`}>
+                      <td style={{ textAlign: 'center' }}>
+                        {row.mode === 0 || row.mode === 1 ? (
+                          <span
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 6,
+                              padding: '2px 10px',
+                              fontSize: '0.78rem',
+                              fontWeight: 700,
+                              lineHeight: '18px',
+                              color: row.mode === 0 ? '#2563eb' : '#b26a00',
+                              backgroundColor: row.mode === 0 ? '#e8f0fe' : '#fdf1e0',
+                            }}
+                          >
+                            <span style={{ width: 6, height: 6, background: 'currentColor', flexShrink: 0 }} />
+                            {row.mode === 0 ? '出厂测试(Factory)' : '耐久测试(Endurance)'}
+                          </span>
+                        ) : (
+                          row.mode ?? '-'
+                        )}
+                      </td>
+                      <td style={{ textAlign: 'center' }}>{formatDataRecordTime(row.sj)}</td>
+                      <td style={{ textAlign: 'center' }}>{row.gw}</td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 6,
+                            padding: '2px 10px',
+                            fontSize: '0.78rem',
+                            fontWeight: 700,
+                            lineHeight: '18px',
+                            color: row.kind === 'Record' ? '#15803d' : '#ca3333',
+                            backgroundColor: row.kind === 'Record' ? '#e6f6ea' : '#fdecec',
+                          }}
+                        >
+                          <span style={{ width: 6, height: 6, background: 'currentColor', flexShrink: 0 }} />
+                          {row.kind === 'Record' ? 'Record' : 'Error'}
+                        </span>
+                      </td>
+                      <td>{row.errText ?? (row.err === null ? '-' : String(row.err))}</td>
+                    </tr>
+                  )
+                })
+              )}
             </tbody>
           </table>
         </div>
-      </section>
+      </article>
 
       <StatusToast message={statusMessage} />
     </section>
@@ -3757,6 +3804,20 @@ function App() {
       <nav className="sidebar-nav" aria-label="主导航">
         {renderSidebarButtons('default')}
       </nav>
+      <div className="sidebar-auth-pin">
+        <div className="sidebar-auth-inline">
+          <button
+            type="button"
+            className="sidebar-auth-entry"
+            onClick={handleAuthEntryClick}
+            disabled={isSidebarCollapsed}
+            title={isSidebarCollapsed ? (isAuthenticated ? '注销' : '登录') : undefined}
+          >
+            <span className="sidebar-auth-icon">{isAuthenticated ? <Icon name="logout" style={{ fontSize: '18px' }} /> : <UserLoginSidebarIcon />}</span>
+            <span className="sidebar-auth-label">{isAuthenticated ? '注销' : '登录'}</span>
+          </button>
+        </div>
+      </div>
 
     </aside>
   )
@@ -3779,7 +3840,7 @@ function App() {
 
   if (view === 'tags') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{tagsPage}</main></div>
   if (view === 'reportConfig') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? reportConfigPage : loginPage}</main></div>
-  if (view === 'uploadInsertAudits') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? uploadInsertAuditPage : loginPage}</main></div>
+  if (view === 'dataRecords') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{isAuthenticated ? dataRecordsPage : loginPage}</main></div>
   if (view === 'recipeDj' || view === 'recipeQyj') return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{recipePage}</main></div>
   return <div className={`app-shell${isSidebarCollapsed ? ' sidebar-collapsed' : ''}`}>{sidebarShell}<main className="workspace">{view === 'help' ? helpPage : loginPage}</main></div>
 }

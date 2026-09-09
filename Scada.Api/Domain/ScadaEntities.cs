@@ -177,29 +177,6 @@ public sealed class WorkOrderEntity
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
 }
 
-public sealed class UploadInsertAuditEntity
-{
-    public long Id { get; set; }
-
-    public int StationIndex { get; set; }
-
-    public string TriggerKind { get; set; } = string.Empty;
-
-    public string TargetTable { get; set; } = string.Empty;
-
-    public string DisplayName { get; set; } = string.Empty;
-
-    public string? Tm { get; set; }
-
-    public int? Gw { get; set; }
-
-    public string? OrderNo { get; set; }
-
-    public int? Mode { get; set; }
-
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
-}
-
 public sealed class RealTimeDataEntity
 {
     public long Id { get; set; }

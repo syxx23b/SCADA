@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState, type MouseEvent } from 'react'
+import { useEffect, useMemo, useState, type MouseEvent } from 'react'
 import jsPDF from 'jspdf'
 import { exportEnduranceTestReportExcel, exportFactoryTestReportExcel, exportGasEngineEnduranceTestReportExcel, exportGasEngineFactoryTestReportExcel, getEnduranceTestReport, getFactoryTestReport, getGasEngineEnduranceTestReport, getGasEngineFactoryTestReport, getSystemSettings } from '../api'
 import type { FactoryTestReportColumn, FactoryTestReportResponse } from '../types'
@@ -275,21 +275,51 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(url)
 }
 
+// Canonical decimal places per report column key (display + canvas PDF text only).
+// Keys not listed here keep their existing output untouched.
+const DECIMAL_PLACES_BY_COLUMN_KEY: Record<string, number> = {
+  pressure: 2,
+  flow: 2,
+  holdingPressure: 2,
+  recoilPressure: 2,
+  siphon: 1,
+  current: 2,
+  lowCurrent: 2,
+  powerFactor: 2,
+  inletPressure: 1,
+  inletTemp: 1,
+  roomtemp: 1,
+  roomwet: 1,
+  power: 0,
+  frequency: 0,
+  lowVoltage: 1,
+  voltage: 1,
+  unloadSpeed: 0,
+  loadSpeed: 0,
+  speed: 0,
+}
+
+function formatDecimalFor(columnKey: string, value: string | null | undefined) {
+  const digits = DECIMAL_PLACES_BY_COLUMN_KEY[columnKey]
+  if (digits === undefined || value === null || value === undefined || value === '') return value
+  const numeric = Number(value)
+  return Number.isFinite(numeric) ? numeric.toFixed(digits) : value
+}
+
 function formatCellValue(columnKey: string, value: string | null | undefined, pressureUnit: string, flowUnit: string, includeUnits = true) {
   if (value === null || value === undefined || value === '') return '-'
   if (!includeUnits) return value
-  const numeric = Number(value)
-  const formatNumber = (digits: number) => Number.isFinite(numeric) ? numeric.toFixed(digits) : value
-  if (columnKey === 'inletPressure') return `${value} bar`
-  if (columnKey === 'inletTemp') return `${formatNumber(1)} ℃`
-  if (columnKey === 'lowVoltage' || columnKey === 'voltage') return `${formatNumber(1)} V`
-  if (columnKey === 'lowCurrent' || columnKey === 'current') return `${value} A`
-  if (columnKey === 'frequency') return `${formatNumber(0)} Hz`
-  if (columnKey === 'power') return `${formatNumber(0)} W`
-  if (columnKey === 'unloadSpeed' || columnKey === 'loadSpeed') return `${formatNumber(0)} RPM`
-  if (columnKey === 'pressure' || columnKey === 'holdingPressure' || columnKey === 'recoilPressure') return `${value} ${pressureUnit}`
-  if (columnKey === 'flow') return `${value} ${flowUnit}`
-  if (columnKey === 'siphon') return `${formatNumber(1)} KPa`
+  if (columnKey === 'inletPressure') return `${formatDecimalFor(columnKey, value)} bar`
+  if (columnKey === 'inletTemp') return `${formatDecimalFor(columnKey, value)} ℃`
+  if (columnKey === 'lowVoltage' || columnKey === 'voltage') return `${formatDecimalFor(columnKey, value)} V`
+  if (columnKey === 'lowCurrent' || columnKey === 'current') return `${formatDecimalFor(columnKey, value)} A`
+  if (columnKey === 'frequency') return `${formatDecimalFor(columnKey, value)} Hz`
+  if (columnKey === 'power') return `${formatDecimalFor(columnKey, value)} W`
+  if (columnKey === 'unloadSpeed' || columnKey === 'loadSpeed') return `${formatDecimalFor(columnKey, value)} RPM`
+  if (columnKey === 'pressure' || columnKey === 'holdingPressure' || columnKey === 'recoilPressure') return `${formatDecimalFor(columnKey, value)} ${pressureUnit}`
+  if (columnKey === 'flow') return `${formatDecimalFor(columnKey, value)} ${flowUnit}`
+  if (columnKey === 'siphon') return `${formatDecimalFor(columnKey, value)} KPa`
+  if (DECIMAL_PLACES_BY_COLUMN_KEY[columnKey] !== undefined) return `${formatDecimalFor(columnKey, value)}`
   return value
 }
 

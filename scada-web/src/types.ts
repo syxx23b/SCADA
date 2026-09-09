@@ -119,19 +119,6 @@ export interface SystemSettings {
   visibleMenuKeys: string[]
 }
 
-export interface UploadInsertAudit {
-  id: number
-  stationIndex: number
-  triggerKind: 'Update' | 'UpdateErr' | string
-  targetTable: string
-  displayName: string
-  tm: string | null
-  gw: number | null
-  orderNo: string | null
-  mode: number | null
-  createdAt: string
-}
-
 export type WorkOrderStatus = '待执行' | '执行中' | '完工归档'
 
 export interface WorkOrder {
@@ -408,4 +395,15 @@ export interface ReworkConfigEntriesResponse {
   suggestions: ReworkSuggestionRow[]
   measures: ReworkMeasureMappingRow[]
   measureCatalog: ReworkMeasureNode[]
+}
+
+export interface DataRecordRow {
+  sj: string
+  gw: number
+  kind: 'Record' | 'Error'
+  orderNo: string | null
+  model: string | null
+  mode: number | null
+  err: number | null
+  errText: string | null
 }
