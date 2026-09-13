@@ -5,8 +5,9 @@
   --tabler-text: #1f2937;
   --tabler-muted: #6b7280;
   --tabler-primary: #4263eb;
-  --tabler-sidebar: #233264;
-  --tabler-sidebar-active: #2f4acb;
+  /* 侧边栏配色:深蓝底 + 亮蓝选中 */
+  --tabler-sidebar: #132b4f;
+  --tabler-sidebar-active: #0067d1;
   --sidebar-collapse-blue: #3B90F5;
   --sidebar-collapse-blue-hover: #61B1FB;
   --sidebar-width: 216px;
@@ -33,7 +34,7 @@ table {
   font-family: var(--app-font-family);
 }
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); background: var(--tabler-bg); color: var(--tabler-text); transition: grid-template-columns var(--sidebar-motion); }
-.sidebar { width: var(--sidebar-width); min-width: var(--sidebar-width); max-width: var(--sidebar-width); position: relative; background: linear-gradient(180deg, var(--tabler-sidebar) 0%, #1d2a56 100%); color: #f4f7ff; display: flex; flex-direction: column; align-items: center; padding: 12px 0; box-shadow: inset -1px 0 0 rgba(255,255,255,0.06); overflow: visible; transition: width var(--sidebar-motion), min-width var(--sidebar-motion), max-width var(--sidebar-motion), padding var(--sidebar-motion); }
+.sidebar { width: var(--sidebar-width); min-width: var(--sidebar-width); max-width: var(--sidebar-width); position: relative; background: var(--tabler-sidebar); color: #f4f7ff; display: flex; flex-direction: column; align-items: center; padding: 12px 0; box-shadow: inset -1px 0 0 rgba(255,255,255,0.06); overflow: visible; transition: width var(--sidebar-motion), min-width var(--sidebar-motion), max-width var(--sidebar-motion), padding var(--sidebar-motion); }
 .brand { width: var(--sidebar-content-width); display: flex; align-items: flex-start; justify-content: flex-start; height: var(--sidebar-brand-height); margin-bottom: 62px; overflow: visible; transition: width var(--sidebar-motion), margin var(--sidebar-motion); }
 .brand-mark { width: 100%; height: 100%; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 4px; padding: 12px 0 0 6px; box-sizing: border-box; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; overflow: visible; transition: width var(--sidebar-motion), padding var(--sidebar-motion), align-items var(--sidebar-motion); }
 .brand-logo-icon { width: 36px; height: 36px; flex: 0 0 36px; object-fit: contain; display: block; }
@@ -73,7 +74,7 @@ table {
   }
 }
 .sidebar-nav { width: var(--sidebar-content-width); display: grid; gap: 4px; justify-items: stretch; transition: width var(--sidebar-motion), gap var(--sidebar-soft-motion); }
-.nav-item { width: var(--sidebar-content-width); min-height: 48px; border: 0; border-radius: 0; background: transparent; color: #d4ddff; padding: 12px; display: flex; align-items: center; justify-content: flex-start; gap: 10px; cursor: pointer; transition: width var(--sidebar-motion), min-height var(--sidebar-motion), padding var(--sidebar-motion), gap var(--sidebar-soft-motion), background 150ms ease, color 150ms ease; }
+.nav-item { width: var(--sidebar-content-width); min-height: 48px; border: 0; border-radius: 0; background: transparent; color: #c8d6ea; padding: 12px; display: flex; align-items: center; justify-content: flex-start; gap: 10px; cursor: pointer; transition: width var(--sidebar-motion), min-height var(--sidebar-motion), padding var(--sidebar-motion), gap var(--sidebar-soft-motion), background 150ms ease, color 150ms ease; }
 .nav-item:hover { background: rgba(255,255,255,0.08); color: #fff; }
 .nav-item.active { background: var(--tabler-sidebar-active); color: #fff; position: relative; }
 .nav-item.active::before { content: none; }
@@ -657,11 +658,11 @@ table {
 
 
 .runtime-shell { min-height: 0; flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--tabler-bg); color: #172036; }
-.runtime-sidebar { background: linear-gradient(180deg, var(--tabler-sidebar) 0%, #1d2a56 100%); color: #f4f7ff; display: flex; flex-direction: column; align-items: stretch; padding: 12px 0; box-shadow: inset -1px 0 0 rgba(255,255,255,0.06); transition: width var(--sidebar-motion), min-width var(--sidebar-motion), max-width var(--sidebar-motion), padding var(--sidebar-motion); }
+.runtime-sidebar { background: var(--tabler-sidebar); color: #f4f7ff; display: flex; flex-direction: column; align-items: stretch; padding: 12px 0; box-shadow: inset -1px 0 0 rgba(255,255,255,0.06); transition: width var(--sidebar-motion), min-width var(--sidebar-motion), max-width var(--sidebar-motion), padding var(--sidebar-motion); }
 .runtime-brand { display: flex; align-items: flex-start; justify-content: flex-start; height: var(--sidebar-brand-height); margin-bottom: 6px; transition: width var(--sidebar-motion), margin var(--sidebar-motion); }
 .runtime-brand-mark { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 4px; padding: 12px 0 0 6px; box-sizing: border-box; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; transition: width var(--sidebar-motion), padding var(--sidebar-motion), align-items var(--sidebar-motion); }
 .runtime-sidebar-nav { display: grid; gap: 4px; transition: width var(--sidebar-motion), gap var(--sidebar-soft-motion); }
-.runtime-nav { border: 0; border-radius: 0; background: transparent; color: #d4ddff; padding: 12px 0 10px; display: grid; place-items: center; gap: 6px; cursor: pointer; transition: width var(--sidebar-motion), min-height var(--sidebar-motion), padding var(--sidebar-motion), gap var(--sidebar-soft-motion), background 150ms ease, color 150ms ease; }
+.runtime-nav { border: 0; border-radius: 0; background: transparent; color: #c8d6ea; padding: 12px 0 10px; display: grid; place-items: center; gap: 6px; cursor: pointer; transition: width var(--sidebar-motion), min-height var(--sidebar-motion), padding var(--sidebar-motion), gap var(--sidebar-soft-motion), background 150ms ease, color 150ms ease; }
 .runtime-nav:hover { background: rgba(255,255,255,0.08); color: #fff; }
 .runtime-nav.active { background: var(--tabler-sidebar-active); color: #fff; position: relative; }
 .runtime-nav.active::before { content: none; }
@@ -1012,7 +1013,7 @@ table {
   width: var(--sidebar-content-width) !important;
   height: 1px;
   margin: 8px 0 !important;
-  background: rgba(255, 255, 255, 0.24) !important;
+  background: #4b5e7a !important;
   justify-self: center;
   transition: width var(--sidebar-soft-motion), margin var(--sidebar-soft-motion), opacity var(--sidebar-fade-motion);
 }
@@ -1024,7 +1025,7 @@ table {
   line-height: 24px;
   font-weight: 500;
   letter-spacing: 0;
-  color: rgba(255, 255, 255, 0.88);
+  color: #8fa6c7;
   text-align: left;
   overflow: hidden;
   transform: translateX(0);
